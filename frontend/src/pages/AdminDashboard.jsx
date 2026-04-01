@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../services/api.js";
 import { formatINR } from "../utils/format.js";
 
@@ -25,6 +26,7 @@ function Sparkline({ values = [], color = "#f97316" }) {
 }
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [analytics, setAnalytics] = useState({ total_visits: 0, countries: [], platforms: [], visits_by_day: [] });
@@ -80,13 +82,23 @@ export default function AdminDashboard() {
     subtitle: "Best deals and curated furniture collections.",
     ctaText: "Explore More",
   });
+  const [timeRange, setTimeRange] = useState("today");
 
   const getErrorMessage = (err, fallback) => {
     const detail = err?.response?.data?.detail;
+    if (detail === "Invalid token" || detail === "User not found") {
+      return "Session expired. Please login again.";
+    }
     if (typeof detail === "string") return detail;
     if (Array.isArray(detail) && detail.length > 0) return detail[0]?.msg || fallback;
     return fallback;
   };
+
+  useEffect(() => {
+    if (error === "Session expired. Please login again.") {
+      navigate("/login");
+    }
+  }, [error, navigate]);
 
   const loadData = async () => {
     setError("");
@@ -140,24 +152,47 @@ export default function AdminDashboard() {
     }
   }, [editId, products]);
 
-  const todayStats = useMemo(() => {
-    const today = new Date();
-    const isToday = (iso) => {
-      const d = new Date(iso);
-      return (
-        d.getDate() === today.getDate() &&
-        d.getMonth() === today.getMonth() &&
-        d.getFullYear() === today.getFullYear()
-      );
-    };
-    const todayOrders = orders.filter((o) => isToday(o.created_at));
-    const todaySales = todayOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
-    return { count: todayOrders.length, sales: todaySales };
-  }, [orders]);
+  const filteredOrders = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+
+    return orders.filter((order) => {
+      const raw = order.created_at;
+      if (!raw) return false;
+      const created = new Date(raw);
+      if (Number.isNaN(created.getTime())) return false;
+
+      if (timeRange === "today") return created >= startOfToday;
+      if (timeRange === "yesterday") return created >= startOfYesterday && created < startOfToday;
+      if (timeRange === "7d") {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 7);
+        return created >= from;
+      }
+      if (timeRange === "30d") {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 30);
+        return created >= from;
+      }
+      if (timeRange === "365d") {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 365);
+        return created >= from;
+      }
+      return true;
+    });
+  }, [orders, timeRange]);
+
+  const periodStats = useMemo(() => {
+    const sales = filteredOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
+    return { count: filteredOrders.length, sales };
+  }, [filteredOrders]);
 
   const productSales = useMemo(() => {
     const map = {};
-    orders.forEach((order) => {
+    filteredOrders.forEach((order) => {
       order.items.forEach((item) => {
         const key = item.name;
         if (!map[key]) {
@@ -168,11 +203,11 @@ export default function AdminDashboard() {
       });
     });
     return Object.values(map).sort((a, b) => b.revenue - a.revenue);
-  }, [orders]);
+  }, [filteredOrders]);
 
   const salesByDay = useMemo(() => {
     const map = {};
-    orders.forEach((o) => {
+    filteredOrders.forEach((o) => {
       const day = (o.created_at || "").slice(0, 10);
       if (!day) return;
       if (!map[day]) map[day] = 0;
@@ -182,7 +217,7 @@ export default function AdminDashboard() {
       .map(([date, value]) => ({ date, value }))
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-7);
-  }, [orders]);
+  }, [filteredOrders]);
 
   const visitsSeries = analytics.visits_by_day.map((d) => d.count);
   const salesSeries = salesByDay.map((d) => d.value);
@@ -194,7 +229,7 @@ export default function AdminDashboard() {
 
   const customerInsights = useMemo(() => {
     const map = {};
-    orders.forEach((order) => {
+    filteredOrders.forEach((order) => {
       const key = order.phone || order.customer_name || order.id;
       if (!map[key]) {
         map[key] = {
@@ -215,7 +250,16 @@ export default function AdminDashboard() {
       }
     });
     return Object.values(map).sort((a, b) => b.totalSpend - a.totalSpend);
-  }, [orders]);
+  }, [filteredOrders]);
+
+  const rangeLabel = useMemo(() => {
+    if (timeRange === "today") return "Today";
+    if (timeRange === "yesterday") return "Yesterday";
+    if (timeRange === "7d") return "Last 7 Days";
+    if (timeRange === "30d") return "Last 30 Days";
+    if (timeRange === "365d") return "Last 365 Days";
+    return "Selected Range";
+  }, [timeRange]);
 
   const sectionTitles = {
     analytics: "Analytics Overview",
@@ -326,7 +370,7 @@ export default function AdminDashboard() {
           </style>
         </head>
         <body>
-          <h2>BR Furniture • Order Slip</h2>
+          <h2>BR Furniture - Order Slip</h2>
           <div class="muted">Order ID: ${order.id}</div>
           <div class="muted">Placed: ${order.created_at}</div>
           <div class="box">
@@ -463,7 +507,28 @@ export default function AdminDashboard() {
               <p className="text-sm text-slate-500">Last refreshed just now</p>
             </div>
             <div className="flex gap-2">
-              <button className="btn-outline">Today</button>
+              <div className="flex items-center gap-2">
+                {[
+                  { key: "today", label: "Today" },
+                  { key: "yesterday", label: "Yesterday" },
+                  { key: "7d", label: "7D" },
+                  { key: "30d", label: "30D" },
+                  { key: "365d", label: "365D" },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`px-3 py-2 rounded-md border text-sm ${
+                      timeRange === item.key
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "border-slate-300 hover:border-slate-400"
+                    }`}
+                    onClick={() => setTimeRange(item.key)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
               <button className="btn-outline">All channels</button>
             </div>
           </div>
@@ -481,12 +546,14 @@ export default function AdminDashboard() {
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   <p className="text-sm text-slate-500">Total sales</p>
-                  <p className="text-2xl font-semibold">{formatINR(todayStats.sales)}</p>
+                  <p className="text-2xl font-semibold">{formatINR(periodStats.sales)}</p>
+                  <p className="text-xs text-slate-500 mt-1">{rangeLabel}</p>
                   <Sparkline values={salesSeries} color="#22c55e" />
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   <p className="text-sm text-slate-500">Orders</p>
-                  <p className="text-2xl font-semibold">{todayStats.count}</p>
+                  <p className="text-2xl font-semibold">{periodStats.count}</p>
+                  <p className="text-xs text-slate-500 mt-1">{rangeLabel}</p>
                   <Sparkline values={salesSeries.map((v) => Math.max(1, v / 1000))} color="#f97316" />
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm">
@@ -514,10 +581,10 @@ export default function AdminDashboard() {
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h3 className="text-lg font-semibold mb-2">Total sales breakdown</h3>
                   <div className="space-y-3 text-sm">
-                    <div className="flex items-center justify-between"><span>Gross sales</span><span>{formatINR(todayStats.sales)}</span></div>
+                    <div className="flex items-center justify-between"><span>Gross sales</span><span>{formatINR(periodStats.sales)}</span></div>
                     <div className="flex items-center justify-between"><span>Discounts</span><span>{formatINR(0)}</span></div>
                     <div className="flex items-center justify-between"><span>Returns</span><span>{formatINR(0)}</span></div>
-                    <div className="flex items-center justify-between"><span>Net sales</span><span>{formatINR(todayStats.sales)}</span></div>
+                    <div className="flex items-center justify-between"><span>Net sales</span><span>{formatINR(periodStats.sales)}</span></div>
                   </div>
                 </div>
               </div>
@@ -583,8 +650,10 @@ export default function AdminDashboard() {
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h3 className="text-lg font-semibold mb-2">Average order value</h3>
-                  <div className="text-2xl font-semibold">{formatINR(todayStats.sales)}</div>
-                  <p className="text-sm text-slate-500">Based on today’s orders</p>
+                  <div className="text-2xl font-semibold">
+                    {formatINR(periodStats.count > 0 ? periodStats.sales / periodStats.count : 0)}
+                  </div>
+                  <p className="text-sm text-slate-500">Based on {rangeLabel.toLowerCase()} orders</p>
                 </div>
               </div>
             </>
@@ -1026,4 +1095,6 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+
 

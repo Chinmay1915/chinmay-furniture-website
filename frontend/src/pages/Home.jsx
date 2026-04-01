@@ -4,6 +4,9 @@ import api from "../services/api.js";
 import ProductCard from "../components/ProductCard.jsx";
 import { sampleProducts, collections, bestSellers } from "../services/mockData.js";
 import { formatINR } from "../utils/format.js";
+import { handleProductImageError } from "../utils/imageFallback.js";
+
+const PRODUCTS_CACHE_KEY = "products_cache_v2";
 
 const heroSlides = [
   {
@@ -39,19 +42,33 @@ export default function Home() {
   const [tab, setTab] = useState("new");
 
   useEffect(() => {
+    localStorage.removeItem("products_cache");
+    const cachedProducts = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (cachedProducts) {
+      try {
+        const parsed = JSON.parse(cachedProducts);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setProducts(parsed);
+        }
+      } catch {
+        // ignore malformed cache
+      }
+    }
+
     api
       .get("/products")
       .then((res) => {
         if (res.data && res.data.length > 0) {
           setProducts(res.data);
+          localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(res.data));
         } else {
           setError("No products found, showing sample data.");
-          setProducts(sampleProducts);
+          setProducts([]);
         }
       })
       .catch(() => {
         setError("Backend not reachable, showing sample data.");
-        setProducts(sampleProducts);
+        setProducts([]);
       });
   }, []);
 
@@ -62,7 +79,12 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  const displayProducts = products.length ? products : sampleProducts;
+  const displayProducts = useMemo(() => {
+    const byId = new Map();
+    sampleProducts.forEach((p) => byId.set(p.id, p));
+    products.forEach((p) => byId.set(p.id, p));
+    return Array.from(byId.values());
+  }, [products]);
   const bestSellerProducts = useMemo(
     () => bestSellers.map((id) => displayProducts.find((p) => p.id === id)).filter(Boolean),
     [displayProducts]
@@ -145,7 +167,12 @@ export default function Home() {
               to={`/product/${p.id}`}
               className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md transition"
             >
-              <img src={p.image_url} alt={p.name} className="h-40 w-full object-cover" />
+              <img
+                src={p.image_url}
+                alt={p.name}
+                className="h-40 w-full object-cover"
+                onError={handleProductImageError}
+              />
               <div className="p-3">
                 <p className="text-sm font-semibold">{p.name}</p>
                 <p className="text-xs text-slate-500 mt-1">{formatINR(p.price)}</p>
@@ -191,7 +218,12 @@ export default function Home() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
           {tabProducts.map((product) => (
             <div key={product.id} className="bg-white rounded-2xl overflow-hidden">
-              <img src={product.image_url} alt={product.name} className="h-56 w-full object-cover" />
+              <img
+                src={product.image_url}
+                alt={product.name}
+                className="h-56 w-full object-cover"
+                onError={handleProductImageError}
+              />
               <div className="p-4">
                 <div className="flex items-center justify-between">
                   <p className="font-semibold">{product.name}</p>
@@ -239,7 +271,7 @@ export default function Home() {
           </div>
           <div>
             <h2 className="text-4xl md:text-5xl leading-tight">Everyone Always Loves Our Unique Design.</h2>
-            <p className="text-slate-600 mt-4">Best deals night you’re free like earth.</p>
+            <p className="text-slate-600 mt-4">Best deals night you're free like earth.</p>
             <button className="btn mt-6">Starting From Rs. 9,999</button>
           </div>
         </div>
@@ -247,7 +279,7 @@ export default function Home() {
 
       <section className="container-page py-8">
         <h2 className="section-title text-center">On Going Offers & Deals</h2>
-        <p className="text-center text-slate-500 mt-2">Best deals night you’re free like earth.</p>
+        <p className="text-center text-slate-500 mt-2">Best deals night you're free like earth.</p>
         <div className="grid md:grid-cols-4 gap-4 mt-6">
           {offerTiles.map((s, idx) => (
             <div key={idx} className="relative overflow-hidden rounded-2xl">
@@ -260,8 +292,8 @@ export default function Home() {
           ))}
         </div>
         <div className="flex justify-center gap-4 mt-5">
-          <button className="btn-outline">‹</button>
-          <button className="btn-outline">›</button>
+          <button className="btn-outline">&lt;</button>
+          <button className="btn-outline">&gt;</button>
         </div>
       </section>
 

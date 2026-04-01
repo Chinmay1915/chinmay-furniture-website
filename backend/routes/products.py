@@ -19,14 +19,22 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def serialize_product(doc):
+    def normalize_asset_url(url: str | None) -> str | None:
+        if not url:
+            return url
+        # Migrate old local URLs so previously created products still work in production.
+        if url.startswith("http://localhost:8000"):
+            return url.replace("http://localhost:8000", BASE_URL)
+        return url
+
     return {
         "id": str(doc.get("_id")),
         "name": doc.get("name"),
         "price": doc.get("price"),
         "description": doc.get("description"),
         "collection": doc.get("collection"),
-        "image_url": doc.get("image_url"),
-        "model_url": doc.get("model_url"),
+        "image_url": normalize_asset_url(doc.get("image_url")),
+        "model_url": normalize_asset_url(doc.get("model_url")),
     }
 
 
@@ -44,6 +52,8 @@ def get_products():
 
 @router.get("/{product_id}")
 def get_product(product_id: str):
+    if not ObjectId.is_valid(product_id):
+        raise HTTPException(status_code=404, detail="Product not found")
     db = get_db()
     product = db.products.find_one({"_id": ObjectId(product_id)})
     if not product:
@@ -116,6 +126,8 @@ def update_product(
     user=Depends(get_current_user),
 ):
     require_admin(user)
+    if not ObjectId.is_valid(product_id):
+        raise HTTPException(status_code=404, detail="Product not found")
     if len(name.strip()) < 3:
         raise HTTPException(status_code=400, detail="Product name must be at least 3 characters")
     if price <= 0:
@@ -154,6 +166,8 @@ def update_product(
 @router.delete("/{product_id}")
 def delete_product(product_id: str, user=Depends(get_current_user)):
     require_admin(user)
+    if not ObjectId.is_valid(product_id):
+        raise HTTPException(status_code=404, detail="Product not found")
     db = get_db()
     result = db.products.delete_one({"_id": ObjectId(product_id)})
     if result.deleted_count == 0:

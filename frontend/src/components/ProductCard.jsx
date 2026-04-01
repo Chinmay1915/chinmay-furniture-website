@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { formatINR } from "../utils/format.js";
+import { handleProductImageError } from "../utils/imageFallback.js";
 
 export default function ProductCard({ product }) {
   return (
@@ -9,6 +10,7 @@ export default function ProductCard({ product }) {
           src={product.image_url}
           alt={product.name}
           className="h-52 w-full object-cover"
+          onError={handleProductImageError}
         />
         <div className="absolute top-3 left-3 bg-white/90 backdrop-blur px-2 py-1 rounded-full text-xs text-slate-700">
           New Arrival
