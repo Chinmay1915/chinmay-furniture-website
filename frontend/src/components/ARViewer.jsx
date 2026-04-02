@@ -8,6 +8,7 @@ export default function ARViewer({ modelUrl, onClose }) {
   const modelRef = useRef(null);
   const [status, setStatus] = useState("Loading 3D model...");
   const [xrSupported, setXrSupported] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState("environment");
 
   useEffect(() => {
     let renderer;
@@ -44,7 +45,12 @@ export default function ARViewer({ modelUrl, onClose }) {
 
     const setupVideoBackground = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (videoStream) {
+          videoStream.getTracks().forEach((t) => t.stop());
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: cameraFacing } },
+        });
         videoStream = stream;
         const video = document.createElement("video");
         video.srcObject = stream;
@@ -54,6 +60,11 @@ export default function ARViewer({ modelUrl, onClose }) {
 
         const texture = new THREE.VideoTexture(video);
         scene.background = texture;
+        setStatus(
+          cameraFacing === "environment"
+            ? "Model ready (rear camera)"
+            : "Model ready (front camera)"
+        );
       } catch (err) {
         setStatus("Camera access blocked. Showing model only.");
       }
@@ -130,7 +141,7 @@ export default function ARViewer({ modelUrl, onClose }) {
       }
       renderer.dispose();
     };
-  }, [modelUrl]);
+  }, [modelUrl, cameraFacing]);
 
   const handleRotate = () => {
     if (modelRef.current) {
@@ -142,6 +153,10 @@ export default function ARViewer({ modelUrl, onClose }) {
     if (modelRef.current) {
       modelRef.current.scale.multiplyScalar(factor);
     }
+  };
+
+  const toggleCamera = () => {
+    setCameraFacing((prev) => (prev === "environment" ? "user" : "environment"));
   };
 
   return (
@@ -165,6 +180,11 @@ export default function ARViewer({ modelUrl, onClose }) {
           <button className="btn-outline bg-white" onClick={() => handleScale(0.9)}>
             Scale -
           </button>
+          {!xrSupported && (
+            <button className="btn-outline bg-white" onClick={toggleCamera}>
+              {cameraFacing === "environment" ? "Use Front Camera" : "Use Rear Camera"}
+            </button>
+          )}
         </div>
         <div ref={mountRef} className="w-full h-full" />
       </div>
