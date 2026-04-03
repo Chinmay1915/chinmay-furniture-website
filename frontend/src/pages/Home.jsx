@@ -277,6 +277,50 @@ export default function Home() {
         </div>
       </section>
 
+      <section id="about-us" className="container-page py-8">
+        <div className="grid lg:grid-cols-[1.05fr_0.95fr] gap-6 items-center">
+          <div className="relative overflow-hidden rounded-3xl shadow-md">
+            <img
+              src="https://images.unsplash.com/photo-1517705008128-361805f42e86?w=1400"
+              alt="BR Furniture workshop"
+              className="h-[380px] w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-black/25" />
+            <div className="absolute bottom-5 left-5 right-5 bg-white/90 rounded-xl p-4">
+              <p className="text-xs uppercase tracking-widest text-slate-500">Since 2018</p>
+              <p className="text-lg font-semibold">Designed for modern homes, built to last.</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-3xl p-7 shadow-sm border border-slate-100">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">About Us</p>
+            <h2 className="section-title mt-2">We make furniture that feels like home.</h2>
+            <p className="text-slate-600 mt-3 leading-7">
+              BR Furniture blends clean design with everyday comfort. From living room essentials
+              to statement pieces, every product is curated to match Indian homes, real lifestyles,
+              and long-term durability.
+            </p>
+            <p className="text-slate-600 mt-3 leading-7">
+              We focus on premium materials, practical craftsmanship, and a smooth online shopping
+              experience so you can confidently choose pieces you will love for years.
+            </p>
+            <div className="grid sm:grid-cols-3 gap-3 mt-6">
+              <div className="rounded-xl bg-slate-50 p-3 border border-slate-100">
+                <p className="text-2xl font-semibold">10k+</p>
+                <p className="text-sm text-slate-500">Happy Customers</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 border border-slate-100">
+                <p className="text-2xl font-semibold">250+</p>
+                <p className="text-sm text-slate-500">Products Curated</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 border border-slate-100">
+                <p className="text-2xl font-semibold">4.8/5</p>
+                <p className="text-sm text-slate-500">Customer Rating</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="container-page py-8">
         <h2 className="section-title text-center">On Going Offers & Deals</h2>
         <p className="text-center text-slate-500 mt-2">Best deals night you're free like earth.</p>
