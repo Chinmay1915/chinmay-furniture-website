@@ -1,7 +1,11 @@
+import os
+
 from fastapi import APIRouter, HTTPException
 from bson import ObjectId
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 
-from models.schemas import SignupRequest, LoginRequest
+from models.schemas import SignupRequest, LoginRequest, GoogleAuthRequest
 from utils.db import get_db
 from utils.auth import (
     hash_password,
@@ -12,6 +16,7 @@ from utils.auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
 
 @router.post("/signup")
@@ -96,5 +101,55 @@ def login(payload: LoginRequest):
             "name": user.get("name"),
             "email": user.get("email"),
             "is_admin": bool(user.get("is_admin")),
+        },
+    }
+
+
+@router.post("/google")
+def google_auth(payload: GoogleAuthRequest):
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google login is not configured on server")
+
+    try:
+        token_info = google_id_token.verify_oauth2_token(
+            payload.credential,
+            google_requests.Request(),
+            GOOGLE_CLIENT_ID,
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Google credential")
+
+    email = token_info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account email not available")
+
+    name = token_info.get("name") or email.split("@")[0]
+
+    db = get_db()
+    user = db.users.find_one({"email": email})
+
+    if not user:
+        user_doc = {
+            "name": name,
+            "email": email,
+            "password": None,
+            "is_admin": email == ADMIN_EMAIL,
+            "auth_provider": "google",
+        }
+        result = db.users.insert_one(user_doc)
+        user_id = str(result.inserted_id)
+        is_admin = user_doc["is_admin"]
+    else:
+        user_id = str(user.get("_id"))
+        is_admin = bool(user.get("is_admin"))
+
+    token = create_access_token(user_id)
+    return {
+        "token": token,
+        "user": {
+            "id": user_id,
+            "name": name if not user else user.get("name") or name,
+            "email": email,
+            "is_admin": is_admin,
         },
     }

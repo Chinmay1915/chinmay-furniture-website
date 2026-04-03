@@ -13,6 +13,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleAuthRequest(BaseModel):
+    credential: str
+
+
 class ProductCreate(BaseModel):
     name: str
     price: float
