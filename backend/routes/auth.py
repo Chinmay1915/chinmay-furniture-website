@@ -1,9 +1,9 @@
 import os
 
 from fastapi import APIRouter, HTTPException
-from bson import ObjectId
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
+from email_validator import validate_email, EmailNotValidError
 
 from models.schemas import SignupRequest, LoginRequest, GoogleAuthRequest
 from utils.db import get_db
@@ -17,6 +17,18 @@ from utils.auth import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+ADMIN_EMAIL_NORMALIZED = ADMIN_EMAIL.strip().lower()
+
+
+def normalize_and_validate_email(raw_email: str) -> str:
+    try:
+        validated = validate_email(raw_email, check_deliverability=True)
+        return validated.normalized.lower()
+    except EmailNotValidError:
+        raise HTTPException(
+            status_code=400,
+            detail="Please use a valid, reachable email address",
+        )
 
 
 @router.post("/signup")
@@ -26,22 +38,26 @@ def signup(payload: SignupRequest):
         db.command("ping")
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Database not available: {e}")
+
+    email = normalize_and_validate_email(payload.email)
+
     if len(payload.name.strip()) < 2:
         raise HTTPException(status_code=400, detail="Name must be at least 2 characters")
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    existing = db.users.find_one({"email": payload.email})
+
+    existing = db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    if payload.email == ADMIN_EMAIL and payload.password != ADMIN_PASSWORD:
+    if email == ADMIN_EMAIL_NORMALIZED and payload.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=403, detail="Admin credentials invalid")
 
     user_doc = {
-        "name": payload.name,
-        "email": payload.email,
+        "name": payload.name.strip(),
+        "email": email,
         "password": hash_password(payload.password),
-        "is_admin": payload.email == ADMIN_EMAIL and payload.password == ADMIN_PASSWORD,
+        "is_admin": email == ADMIN_EMAIL_NORMALIZED and payload.password == ADMIN_PASSWORD,
     }
     result = db.users.insert_one(user_doc)
 
@@ -50,8 +66,8 @@ def signup(payload: SignupRequest):
         "token": token,
         "user": {
             "id": str(result.inserted_id),
-            "name": payload.name,
-            "email": payload.email,
+            "name": user_doc["name"],
+            "email": user_doc["email"],
             "is_admin": user_doc["is_admin"],
         },
     }
@@ -64,16 +80,20 @@ def login(payload: LoginRequest):
         db.command("ping")
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Database not available: {e}")
+
+    email = normalize_and_validate_email(payload.email)
+
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    if payload.email == ADMIN_EMAIL and payload.password != ADMIN_PASSWORD:
+    if email == ADMIN_EMAIL_NORMALIZED and payload.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    user = db.users.find_one({"email": payload.email})
+
+    user = db.users.find_one({"email": email})
     if not user:
-        if payload.email == ADMIN_EMAIL and payload.password == ADMIN_PASSWORD:
+        if email == ADMIN_EMAIL_NORMALIZED and payload.password == ADMIN_PASSWORD:
             user_doc = {
                 "name": "Admin",
-                "email": ADMIN_EMAIL,
+                "email": ADMIN_EMAIL_NORMALIZED,
                 "password": hash_password(ADMIN_PASSWORD),
                 "is_admin": True,
             }
@@ -84,7 +104,7 @@ def login(payload: LoginRequest):
                 "user": {
                     "id": str(result.inserted_id),
                     "name": "Admin",
-                    "email": ADMIN_EMAIL,
+                    "email": ADMIN_EMAIL_NORMALIZED,
                     "is_admin": True,
                 },
             }
@@ -119,11 +139,12 @@ def google_auth(payload: GoogleAuthRequest):
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid Google credential")
 
-    email = token_info.get("email")
-    if not email:
+    raw_email = token_info.get("email")
+    if not raw_email:
         raise HTTPException(status_code=400, detail="Google account email not available")
 
-    name = token_info.get("name") or email.split("@")[0]
+    email = normalize_and_validate_email(raw_email)
+    name = (token_info.get("name") or email.split("@")[0]).strip()
 
     db = get_db()
     user = db.users.find_one({"email": email})
@@ -133,7 +154,7 @@ def google_auth(payload: GoogleAuthRequest):
             "name": name,
             "email": email,
             "password": None,
-            "is_admin": email == ADMIN_EMAIL,
+            "is_admin": email == ADMIN_EMAIL_NORMALIZED,
             "auth_provider": "google",
         }
         result = db.users.insert_one(user_doc)

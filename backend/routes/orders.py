@@ -5,6 +5,7 @@ from bson import ObjectId
 from models.schemas import OrderCreate
 from utils.db import get_db
 from utils.auth import get_current_user
+from utils.emailer import send_order_receipt_email
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -35,6 +36,7 @@ def create_order(payload: OrderCreate, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Phone number must be at least 10 digits")
     if len(payload.pincode.strip()) < 6:
         raise HTTPException(status_code=400, detail="Pincode must be 6 digits")
+
     db = get_db()
     doc = {
         "user_id": ObjectId(user["id"]),
@@ -52,8 +54,17 @@ def create_order(payload: OrderCreate, user=Depends(get_current_user)):
         "payment_signature": payload.payment_signature,
         "created_at": datetime.utcnow().isoformat(),
     }
+
     result = db.orders.insert_one(doc)
-    return {"id": str(result.inserted_id)}
+    order_id = str(result.inserted_id)
+
+    receipt_email_sent = send_order_receipt_email(
+        user_email=user.get("email", ""),
+        order_id=order_id,
+        order_doc=doc,
+    )
+
+    return {"id": order_id, "receipt_email_sent": receipt_email_sent}
 
 
 @router.get("")
