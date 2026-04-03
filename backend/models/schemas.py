@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List, Optional
 from pydantic import BaseModel, EmailStr
 
 
@@ -45,6 +45,9 @@ class OrderCreate(BaseModel):
     country: str
     state: str
     landmark: str
+    payment_id: Optional[str] = None
+    payment_order_id: Optional[str] = None
+    payment_signature: Optional[str] = None
 
 
 class OrderResponse(BaseModel):
@@ -59,4 +62,20 @@ class OrderResponse(BaseModel):
     country: str
     state: str
     landmark: str
+    payment_id: Optional[str] = None
+    payment_order_id: Optional[str] = None
+    payment_signature: Optional[str] = None
     created_at: str
+
+
+class RazorpayCreateOrderRequest(BaseModel):
+    amount: int  # in paise
+    currency: str = "INR"
+    receipt: str
+    notes: Optional[Dict[str, str]] = None
+
+
+class RazorpayVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str

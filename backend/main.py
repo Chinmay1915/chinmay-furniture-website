@@ -9,6 +9,7 @@ from routes.auth import router as auth_router
 from routes.products import router as products_router
 from routes.orders import router as orders_router
 from routes.analytics import router as analytics_router
+from routes.payments import router as payments_router
 
 app = FastAPI()
 
@@ -30,6 +31,7 @@ app.include_router(auth_router)
 app.include_router(products_router)
 app.include_router(orders_router)
 app.include_router(analytics_router)
+app.include_router(payments_router)
 
 
 @app.exception_handler(Exception)

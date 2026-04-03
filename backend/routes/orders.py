@@ -22,6 +22,9 @@ def serialize_order(doc):
         "country": doc.get("country"),
         "state": doc.get("state"),
         "landmark": doc.get("landmark"),
+        "payment_id": doc.get("payment_id"),
+        "payment_order_id": doc.get("payment_order_id"),
+        "payment_signature": doc.get("payment_signature"),
         "created_at": doc.get("created_at"),
     }
 
@@ -44,6 +47,9 @@ def create_order(payload: OrderCreate, user=Depends(get_current_user)):
         "country": payload.country,
         "state": payload.state,
         "landmark": payload.landmark,
+        "payment_id": payload.payment_id,
+        "payment_order_id": payload.payment_order_id,
+        "payment_signature": payload.payment_signature,
         "created_at": datetime.utcnow().isoformat(),
     }
     result = db.orders.insert_one(doc)
