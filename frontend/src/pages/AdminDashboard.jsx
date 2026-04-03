@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api.js";
 import { formatINR } from "../utils/format.js";
@@ -23,6 +23,12 @@ function Sparkline({ values = [], color = "#f97316" }) {
       />
     </svg>
   );
+}
+
+function getScaledBarHeight(value, maxValue, chartHeight = 160, minHeight = 6) {
+  if (!maxValue || maxValue <= 0) return minHeight;
+  const scaled = (Number(value || 0) / maxValue) * (chartHeight - minHeight);
+  return Math.max(minHeight, Math.min(chartHeight, scaled + minHeight));
 }
 
 export default function AdminDashboard() {
@@ -221,6 +227,8 @@ export default function AdminDashboard() {
 
   const visitsSeries = analytics.visits_by_day.map((d) => d.count);
   const salesSeries = salesByDay.map((d) => d.value);
+  const maxSalesValue = Math.max(...salesByDay.map((d) => Number(d.value) || 0), 1);
+  const maxVisitsValue = Math.max(...analytics.visits_by_day.map((d) => Number(d.count) || 0), 1);
   const marketRegions = {
     Asia: ["India", "Japan", "Singapore", "UAE"],
     Europe: ["Germany", "France", "Italy", "Spain"],
@@ -566,12 +574,12 @@ export default function AdminDashboard() {
               <div className="grid lg:grid-cols-[2fr_1fr] gap-6 mt-6">
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h3 className="text-lg font-semibold mb-2">Total sales over time</h3>
-                  <div className="h-40 flex items-end gap-2">
+                  <div className="h-40 flex items-end gap-2 overflow-hidden">
                     {salesByDay.map((d) => (
                       <div key={d.date} className="flex-1">
                         <div
                           className="bg-blue-500/80 rounded-md"
-                          style={{ height: `${Math.max(6, d.value / 200)}px` }}
+                          style={{ height: `${getScaledBarHeight(d.value, maxSalesValue, 160)}px` }}
                         />
                         <p className="text-xs text-slate-500 mt-2">{d.date.slice(5)}</p>
                       </div>
@@ -592,12 +600,12 @@ export default function AdminDashboard() {
               <div className="grid lg:grid-cols-3 gap-6 mt-6">
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h3 className="text-lg font-semibold mb-2">Sessions over time</h3>
-                  <div className="h-32 flex items-end gap-2">
+                  <div className="h-32 flex items-end gap-2 overflow-hidden">
                     {analytics.visits_by_day.map((d) => (
                       <div key={d.date} className="flex-1">
                         <div
                           className="bg-sky-400/80 rounded-md"
-                          style={{ height: `${Math.max(6, d.count * 8)}px` }}
+                          style={{ height: `${getScaledBarHeight(d.count, maxVisitsValue, 128)}px` }}
                         />
                       </div>
                     ))}
@@ -1095,6 +1103,7 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
 
 
 
