@@ -1,0 +1,255 @@
+﻿FULL BACKEND + FRONTEND SOURCE CODE (CLEAN)
+Generated: 2026-04-04 01:48:05
+Root: c:\chinmay code
+Included folders: backend, frontend
+Included files: 7
+
+
+================================================================
+FILE: ct\frontend\src\.vscode\launch.json
+================================================================
+
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Chrome against localhost",
+            "url": "http://localhost:8080",
+            "webRoot": "${workspaceFolder}"
+        }
+    ]
+}
+
+
+================================================================
+FILE: ct\frontend\src\App.css
+================================================================
+
+.App {
+  text-align: center;
+}
+
+header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+}
+
+.container {
+  display: flex;
+  justify-content: space-around;
+  padding: 20px;
+}
+
+.products, .cart {
+  width: 45%;
+}
+
+.product {
+  border: 1px solid #ddd;
+  padding: 10px;
+  margin: 10px 0;
+}
+
+.product img {
+  width: 100px;
+  height: 100px;
+}
+
+button {
+  background-color: #61dafb;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+}
+
+
+================================================================
+FILE: ct\frontend\src\App.js
+================================================================
+
+import React, { useState, useEffect } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import CheckoutForm from './components/CheckoutForm';
+import './App.css';
+
+const stripePromise = loadStripe('your_stripe_publishable_key_here'); // Replace with your Stripe publishable key
+
+function App() {
+  const [products, setProducts] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [showCheckout, setShowCheckout] = useState(false);
+
+  useEffect(() => {
+    fetch('http://localhost:5000/products')
+      .then(res => res.json())
+      .then(data => setProducts(data));
+  }, []);
+
+  const addToCart = (product) => {
+    setCart([...cart, product]);
+  };
+
+  const getCartTotal = () => {
+    return cart.reduce((total, item) => total + item.price, 0);
+  };
+
+  return (
+    <div className="App">
+      <header>
+        <h1>Furniture Management</h1>
+      </header>
+      <div className="container">
+        <div className="products">
+          <h2>Products</h2>
+          {products.map(product => (
+            <div key={product.id} className="product">
+              <img src={product.image_url} alt={product.name} />
+              <h3>{product.name}</h3>
+              <p>{product.description}</p>
+              <p>${product.price}</p>
+              <button onClick={() => addToCart(product)}>Add to Cart</button>
+            </div>
+          ))}
+        </div>
+        <div className="cart">
+          <h2>Cart</h2>
+          {cart.map((item, index) => (
+            <div key={index}>
+              <p>{item.name} - ${item.price}</p>
+            </div>
+          ))}
+          <p>Total: ${getCartTotal()}</p>
+          <button onClick={() => setShowCheckout(true)}>Checkout</button>
+        </div>
+      </div>
+      {showCheckout && (
+        <Elements stripe={stripePromise}>
+          <CheckoutForm amount={getCartTotal() * 100} cart={cart} onSuccess={() => setShowCheckout(false)} />
+        </Elements>
+      )}
+    </div>
+  );
+}
+
+export default App;
+
+
+================================================================
+FILE: ct\frontend\src\components\CheckoutForm.js
+================================================================
+
+import React, { useState } from 'react';
+import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+
+const CheckoutForm = ({ amount, cart, onSuccess }) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!stripe || !elements) {
+      return;
+    }
+
+    setProcessing(true);
+
+    const { error, paymentMethod } = await stripe.createPaymentMethod({
+      type: 'card',
+      card: elements.getElement(CardElement),
+    });
+
+    if (error) {
+      setError(error.message);
+      setProcessing(false);
+    } else {
+      // Send payment method to backend
+      const response = await fetch('http://localhost:5000/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount }),
+      });
+
+      const { client_secret } = await response.json();
+
+      const { error: confirmError } = await stripe.confirmCardPayment(client_secret, {
+        payment_method: paymentMethod.id,
+      });
+
+      if (confirmError) {
+        setError(confirmError.message);
+      } else {
+        // Payment succeeded, create order
+        await fetch('http://localhost:5000/order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: cart, total: amount / 100 }),
+        });
+        onSuccess();
+        alert('Payment successful!');
+      }
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <CardElement />
+      {error && <div>{error}</div>}
+      <button disabled={!stripe || processing}>
+        {processing ? 'Processing...' : 'Pay'}
+      </button>
+    </form>
+  );
+};
+
+export default CheckoutForm;
+
+
+================================================================
+FILE: ct\frontend\src\index.css
+================================================================
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+
+================================================================
+FILE: ct\frontend\src\index.js
+================================================================
+
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import './index.css';
+import App from './App';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+
+================================================================
+FILE: ct\frontend\src\PROJECT_DOCUMENTATION.md

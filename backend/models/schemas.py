@@ -6,11 +6,19 @@ class SignupRequest(BaseModel):
     name: str
     email: EmailStr
     password: str
+    otp: str
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    otp: str
+
+
+class OTPRequest(BaseModel):
+    email: EmailStr
+    purpose: str  # signup | login
+    password: Optional[str] = None
 
 
 class GoogleAuthRequest(BaseModel):

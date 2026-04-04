@@ -74,3 +74,37 @@ def send_order_receipt_email(user_email: str, order_id: str, order_doc: dict) ->
     except Exception as exc:
         logger.exception("Failed to send receipt email: %s", exc)
         return False
+
+
+def send_auth_otp_email(user_email: str, otp_code: str, purpose: str) -> bool:
+    if not user_email or not _smtp_ready():
+        return False
+
+    subject_action = "Login" if purpose == "login" else "Signup"
+    message = EmailMessage()
+    message["Subject"] = f"BR Furniture {subject_action} OTP"
+    message["From"] = SMTP_FROM
+    message["To"] = user_email
+    message.set_content(
+        "\n".join(
+            [
+                "Your BR Furniture verification code is:",
+                "",
+                f"{otp_code}",
+                "",
+                "This OTP is valid for 10 minutes.",
+                "Do not share this code with anyone.",
+            ]
+        )
+    )
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+            if SMTP_USE_TLS:
+                server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(message)
+        return True
+    except Exception as exc:
+        logger.exception("Failed to send auth OTP email: %s", exc)
+        return False

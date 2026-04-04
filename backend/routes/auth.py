@@ -1,11 +1,13 @@
 import os
+import random
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from email_validator import validate_email, EmailNotValidError
 
-from models.schemas import SignupRequest, LoginRequest, GoogleAuthRequest
+from models.schemas import SignupRequest, LoginRequest, GoogleAuthRequest, OTPRequest
 from utils.db import get_db
 from utils.auth import (
     hash_password,
@@ -14,10 +16,12 @@ from utils.auth import (
     ADMIN_EMAIL,
     ADMIN_PASSWORD,
 )
+from utils.emailer import send_auth_otp_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 ADMIN_EMAIL_NORMALIZED = ADMIN_EMAIL.strip().lower()
+OTP_TTL_MINUTES = 10
 
 
 def normalize_and_validate_email(raw_email: str) -> str:
@@ -29,6 +33,97 @@ def normalize_and_validate_email(raw_email: str) -> str:
             status_code=400,
             detail="Please use a valid, reachable email address",
         )
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _generate_otp() -> str:
+    return f"{random.randint(0, 999999):06d}"
+
+
+def _validate_otp(db, email: str, purpose: str, otp_code: str) -> None:
+    now_iso = _utc_now().isoformat()
+    otp_doc = db.email_otps.find_one(
+        {
+            "email": email,
+            "purpose": purpose,
+            "code": otp_code,
+            "used": False,
+            "expires_at": {"$gt": now_iso},
+        },
+        sort=[("created_at", -1)],
+    )
+    if not otp_doc:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    db.email_otps.update_one({"_id": otp_doc["_id"]}, {"$set": {"used": True, "used_at": now_iso}})
+
+
+def _check_login_credentials(db, email: str, password: str):
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    if email == ADMIN_EMAIL_NORMALIZED and password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    user = db.users.find_one({"email": email})
+    if not user:
+        if email == ADMIN_EMAIL_NORMALIZED and password == ADMIN_PASSWORD:
+            return None
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    hashed = user.get("password")
+    if not hashed or not verify_password(password, hashed):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    return user
+
+
+@router.post("/request-otp")
+def request_otp(payload: OTPRequest):
+    db = get_db()
+    try:
+        db.command("ping")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database not available: {e}")
+
+    purpose = (payload.purpose or "").strip().lower()
+    if purpose not in {"signup", "login"}:
+        raise HTTPException(status_code=400, detail="Purpose must be signup or login")
+
+    email = normalize_and_validate_email(payload.email)
+
+    if purpose == "signup":
+        existing = db.users.find_one({"email": email})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+    else:
+        if not payload.password:
+            raise HTTPException(status_code=400, detail="Password is required for login OTP")
+        _check_login_credentials(db, email, payload.password)
+
+    otp_code = _generate_otp()
+    now = _utc_now()
+    expires = now + timedelta(minutes=OTP_TTL_MINUTES)
+
+    db.email_otps.insert_one(
+        {
+            "email": email,
+            "purpose": purpose,
+            "code": otp_code,
+            "used": False,
+            "created_at": now.isoformat(),
+            "expires_at": expires.isoformat(),
+        }
+    )
+
+    sent = send_auth_otp_email(email, otp_code, purpose)
+    if not sent:
+        raise HTTPException(status_code=503, detail="OTP email service is unavailable")
+
+    return {"message": "OTP sent successfully", "expires_in_minutes": OTP_TTL_MINUTES}
 
 
 @router.post("/signup")
@@ -49,6 +144,8 @@ def signup(payload: SignupRequest):
     existing = db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    _validate_otp(db, email, "signup", payload.otp)
 
     if email == ADMIN_EMAIL_NORMALIZED and payload.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=403, detail="Admin credentials invalid")
@@ -82,36 +179,28 @@ def login(payload: LoginRequest):
         raise HTTPException(status_code=503, detail=f"Database not available: {e}")
 
     email = normalize_and_validate_email(payload.email)
+    user = _check_login_credentials(db, email, payload.password)
 
-    if len(payload.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    if email == ADMIN_EMAIL_NORMALIZED and payload.password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    _validate_otp(db, email, "login", payload.otp)
 
-    user = db.users.find_one({"email": email})
-    if not user:
-        if email == ADMIN_EMAIL_NORMALIZED and payload.password == ADMIN_PASSWORD:
-            user_doc = {
+    if not user and email == ADMIN_EMAIL_NORMALIZED and payload.password == ADMIN_PASSWORD:
+        user_doc = {
+            "name": "Admin",
+            "email": ADMIN_EMAIL_NORMALIZED,
+            "password": hash_password(ADMIN_PASSWORD),
+            "is_admin": True,
+        }
+        result = db.users.insert_one(user_doc)
+        token = create_access_token(str(result.inserted_id))
+        return {
+            "token": token,
+            "user": {
+                "id": str(result.inserted_id),
                 "name": "Admin",
                 "email": ADMIN_EMAIL_NORMALIZED,
-                "password": hash_password(ADMIN_PASSWORD),
                 "is_admin": True,
-            }
-            result = db.users.insert_one(user_doc)
-            token = create_access_token(str(result.inserted_id))
-            return {
-                "token": token,
-                "user": {
-                    "id": str(result.inserted_id),
-                    "name": "Admin",
-                    "email": ADMIN_EMAIL_NORMALIZED,
-                    "is_admin": True,
-                },
-            }
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if not verify_password(payload.password, user.get("password")):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+            },
+        }
 
     token = create_access_token(str(user.get("_id")))
     return {

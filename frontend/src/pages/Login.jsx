@@ -21,8 +21,11 @@ function AuthShell({ title, subtitle, children }) {
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
+  const [otpInfo, setOtpInfo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
   const { setAuthData } = useAuth();
   const navigate = useNavigate();
 
@@ -51,18 +54,38 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
+    setOtpInfo("");
     if (!email.includes("@")) return setError("Enter a valid email address.");
     if (password.length < 6) return setError("Password must be at least 6 characters.");
+    if (!otp.trim() || otp.trim().length !== 6) return setError("Enter the 6-digit OTP.");
 
     setLoading(true);
     try {
-      const res = await api.post("/auth/login", { email, password });
+      const res = await api.post("/auth/login", { email, password, otp: otp.trim() });
       completeAuth(res.data);
     } catch (err) {
       const detail = err.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Login failed. Check email/password.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    setError("");
+    setOtpInfo("");
+    if (!email.includes("@")) return setError("Enter a valid email address first.");
+    if (password.length < 6) return setError("Enter password first to send login OTP.");
+
+    setSendingOtp(true);
+    try {
+      await api.post("/auth/request-otp", { email, password, purpose: "login" });
+      setOtpInfo("OTP sent to your registered email. It is valid for 10 minutes.");
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not send OTP.");
+    } finally {
+      setSendingOtp(false);
     }
   };
 
@@ -78,9 +101,21 @@ export default function Login() {
         <form onSubmit={handleLogin} className="space-y-3">
           <input className="w-full border border-slate-300 p-3 rounded-xl" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <input className="w-full border border-slate-300 p-3 rounded-xl" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          <button className="w-full rounded-xl py-3 text-white font-semibold bg-gradient-to-r from-sky-600 to-indigo-600 hover:opacity-95 disabled:opacity-60" type="submit" disabled={loading}>
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <input className="w-full border border-slate-300 p-3 rounded-xl" placeholder="Enter 6-digit OTP" value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={6} required />
+            <button
+              type="button"
+              className="rounded-xl px-4 text-sm border border-slate-300 hover:border-slate-400 disabled:opacity-60"
+              onClick={handleSendOtp}
+              disabled={loading || sendingOtp}
+            >
+              {sendingOtp ? "Sending..." : "Send OTP"}
+            </button>
+          </div>
+          <button className="w-full rounded-xl py-3 text-white font-semibold bg-gradient-to-r from-sky-600 to-indigo-600 hover:opacity-95 disabled:opacity-60" type="submit" disabled={loading || sendingOtp}>
             {loading ? "Please wait..." : "Login"}
           </button>
+          {otpInfo && <p className="text-emerald-700 text-sm">{otpInfo}</p>}
           {error && <p className="text-red-600 text-sm">{error}</p>}
         </form>
 
