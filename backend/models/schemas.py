@@ -15,6 +15,11 @@ class LoginRequest(BaseModel):
     otp: str
 
 
+class LoginOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+
 class OTPRequest(BaseModel):
     email: EmailStr
     purpose: str  # signup | login

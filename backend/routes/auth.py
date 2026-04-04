@@ -7,7 +7,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from email_validator import validate_email, EmailNotValidError
 
-from models.schemas import SignupRequest, LoginRequest, GoogleAuthRequest, OTPRequest
+from models.schemas import SignupRequest, LoginRequest, LoginOTPRequest, GoogleAuthRequest, OTPRequest
 from utils.db import get_db
 from utils.auth import (
     hash_password,
@@ -100,9 +100,23 @@ def request_otp(payload: OTPRequest):
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
     else:
-        if not payload.password:
-            raise HTTPException(status_code=400, detail="Password is required for login OTP")
-        _check_login_credentials(db, email, payload.password)
+        user = db.users.find_one({"email": email})
+
+        if email == ADMIN_EMAIL_NORMALIZED:
+            if not payload.password:
+                raise HTTPException(status_code=400, detail="Password is required for admin login OTP")
+            if payload.password != ADMIN_PASSWORD:
+                raise HTTPException(status_code=401, detail="Invalid credentials")
+        elif not user:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        else:
+            hashed = user.get("password")
+            # Password users must provide password before OTP.
+            if hashed:
+                if not payload.password:
+                    raise HTTPException(status_code=400, detail="Password is required for login OTP")
+                _check_login_credentials(db, email, payload.password)
+            # Google-only users (no password) are allowed to request OTP with email only.
 
     otp_code = _generate_otp()
     now = _utc_now()
@@ -201,6 +215,48 @@ def login(payload: LoginRequest):
                 "is_admin": True,
             },
         }
+
+    token = create_access_token(str(user.get("_id")))
+    return {
+        "token": token,
+        "user": {
+            "id": str(user.get("_id")),
+            "name": user.get("name"),
+            "email": user.get("email"),
+            "is_admin": bool(user.get("is_admin")),
+        },
+    }
+
+
+@router.post("/login-otp")
+def login_with_otp(payload: LoginOTPRequest):
+    db = get_db()
+    try:
+        db.command("ping")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database not available: {e}")
+
+    email = normalize_and_validate_email(payload.email)
+    _validate_otp(db, email, "login", payload.otp)
+
+    if email == ADMIN_EMAIL_NORMALIZED:
+        user = db.users.find_one({"email": ADMIN_EMAIL_NORMALIZED})
+        if not user:
+            user_doc = {
+                "name": "Admin",
+                "email": ADMIN_EMAIL_NORMALIZED,
+                "password": hash_password(ADMIN_PASSWORD),
+                "is_admin": True,
+            }
+            result = db.users.insert_one(user_doc)
+            user = {**user_doc, "_id": result.inserted_id}
+    else:
+        user = db.users.find_one({"email": email})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        # OTP-only login is intended for Google accounts (or password-less users).
+        if user.get("password"):
+            raise HTTPException(status_code=400, detail="Use password login for this account")
 
     token = create_access_token(str(user.get("_id")))
     return {
