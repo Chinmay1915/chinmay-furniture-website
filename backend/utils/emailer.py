@@ -8,9 +8,10 @@ logger = logging.getLogger(__name__)
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "").strip()
-SMTP_PASS = os.getenv("SMTP_PASS", "").strip()
+SMTP_PASS = os.getenv("SMTP_PASS", "").replace(" ", "").strip()
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER).strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes"}
+SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").strip().lower() in {"1", "true", "yes"}
 
 
 def _smtp_ready() -> bool:
@@ -65,8 +66,10 @@ def send_order_receipt_email(user_email: str, order_id: str, order_doc: dict) ->
     message.set_content(_build_receipt_lines(order_id, order_doc))
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
-            if SMTP_USE_TLS:
+        use_ssl = SMTP_USE_SSL or SMTP_PORT == 465
+        smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+        with smtp_cls(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+            if SMTP_USE_TLS and not use_ssl:
                 server.starttls()
             server.login(SMTP_USER, SMTP_PASS)
             server.send_message(message)
@@ -99,8 +102,10 @@ def send_auth_otp_email(user_email: str, otp_code: str, purpose: str) -> bool:
     )
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
-            if SMTP_USE_TLS:
+        use_ssl = SMTP_USE_SSL or SMTP_PORT == 465
+        smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+        with smtp_cls(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+            if SMTP_USE_TLS and not use_ssl:
                 server.starttls()
             server.login(SMTP_USER, SMTP_PASS)
             server.send_message(message)
