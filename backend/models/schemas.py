@@ -22,12 +22,18 @@ class LoginOTPRequest(BaseModel):
 
 class OTPRequest(BaseModel):
     email: EmailStr
-    purpose: str  # signup | login
+    purpose: str  # signup | login | reset
     password: Optional[str] = None
 
 
 class GoogleAuthRequest(BaseModel):
     credential: str
+
+
+class ForgotPasswordResetRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str
 
 
 class ProductCreate(BaseModel):

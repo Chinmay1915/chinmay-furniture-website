@@ -7,7 +7,14 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from email_validator import validate_email, EmailNotValidError
 
-from models.schemas import SignupRequest, LoginRequest, LoginOTPRequest, GoogleAuthRequest, OTPRequest
+from models.schemas import (
+    SignupRequest,
+    LoginRequest,
+    LoginOTPRequest,
+    GoogleAuthRequest,
+    OTPRequest,
+    ForgotPasswordResetRequest,
+)
 from utils.db import get_db
 from utils.auth import (
     hash_password,
@@ -22,6 +29,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 ADMIN_EMAIL_NORMALIZED = ADMIN_EMAIL.strip().lower()
 OTP_TTL_MINUTES = 10
+OTP_DEV_FALLBACK = os.getenv("OTP_DEV_FALLBACK", "true").strip().lower() in {"1", "true", "yes"}
 
 
 def normalize_and_validate_email(raw_email: str) -> str:
@@ -90,8 +98,8 @@ def request_otp(payload: OTPRequest):
         raise HTTPException(status_code=503, detail=f"Database not available: {e}")
 
     purpose = (payload.purpose or "").strip().lower()
-    if purpose not in {"signup", "login"}:
-        raise HTTPException(status_code=400, detail="Purpose must be signup or login")
+    if purpose not in {"signup", "login", "reset"}:
+        raise HTTPException(status_code=400, detail="Purpose must be signup, login, or reset")
 
     email = normalize_and_validate_email(payload.email)
 
@@ -99,7 +107,7 @@ def request_otp(payload: OTPRequest):
         existing = db.users.find_one({"email": email})
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
-    else:
+    elif purpose == "login":
         user = db.users.find_one({"email": email})
 
         if email == ADMIN_EMAIL_NORMALIZED:
@@ -117,6 +125,12 @@ def request_otp(payload: OTPRequest):
                     raise HTTPException(status_code=400, detail="Password is required for login OTP")
                 _check_login_credentials(db, email, payload.password)
             # Google-only users (no password) are allowed to request OTP with email only.
+    else:
+        if email == ADMIN_EMAIL_NORMALIZED:
+            raise HTTPException(status_code=400, detail="Admin password reset is not supported here")
+        user = db.users.find_one({"email": email})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
     otp_code = _generate_otp()
     now = _utc_now()
@@ -135,6 +149,12 @@ def request_otp(payload: OTPRequest):
 
     sent = send_auth_otp_email(email, otp_code, purpose)
     if not sent:
+        if OTP_DEV_FALLBACK:
+            return {
+                "message": "OTP email service is unavailable. Using dev fallback OTP.",
+                "expires_in_minutes": OTP_TTL_MINUTES,
+                "dev_otp": otp_code,
+            }
         raise HTTPException(status_code=503, detail="OTP email service is unavailable")
 
     return {"message": "OTP sent successfully", "expires_in_minutes": OTP_TTL_MINUTES}
@@ -268,6 +288,33 @@ def login_with_otp(payload: LoginOTPRequest):
             "is_admin": bool(user.get("is_admin")),
         },
     }
+
+
+@router.post("/forgot-password/reset")
+def reset_password_with_otp(payload: ForgotPasswordResetRequest):
+    db = get_db()
+    try:
+        db.command("ping")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database not available: {e}")
+
+    email = normalize_and_validate_email(payload.email)
+    if email == ADMIN_EMAIL_NORMALIZED:
+        raise HTTPException(status_code=400, detail="Admin password reset is not supported here")
+
+    user = db.users.find_one({"email": email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    _validate_otp(db, email, "reset", payload.otp.strip())
+    db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password": hash_password(payload.new_password)}},
+    )
+    return {"message": "Password reset successfully"}
 
 
 @router.post("/google")

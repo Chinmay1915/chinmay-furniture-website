@@ -83,7 +83,12 @@ def send_auth_otp_email(user_email: str, otp_code: str, purpose: str) -> bool:
     if not user_email or not _smtp_ready():
         return False
 
-    subject_action = "Login" if purpose == "login" else "Signup"
+    if purpose == "login":
+        subject_action = "Login"
+    elif purpose == "reset":
+        subject_action = "Password Reset"
+    else:
+        subject_action = "Signup"
     message = EmailMessage()
     message["Subject"] = f"BR Furniture {subject_action} OTP"
     message["From"] = SMTP_FROM
