@@ -48,9 +48,21 @@ export default function ARViewer({ modelUrl, onClose }) {
         if (videoStream) {
           videoStream.getTracks().forEach((t) => t.stop());
         }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: cameraFacing } },
-        });
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: cameraFacing } },
+          });
+        } catch (err) {
+          if (cameraFacing === "environment") {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: "user" },
+            });
+            setCameraFacing("user");
+          } else {
+            throw err;
+          }
+        }
         videoStream = stream;
         const video = document.createElement("video");
         video.srcObject = stream;
@@ -66,7 +78,7 @@ export default function ARViewer({ modelUrl, onClose }) {
             : "Model ready (front camera)"
         );
       } catch (err) {
-        setStatus("Camera access blocked. Showing model only.");
+        setStatus("AR not available. Showing 3D preview only.");
       }
     };
 
@@ -80,7 +92,7 @@ export default function ARViewer({ modelUrl, onClose }) {
           modelRef.current.position.set(0, -0.5, -2);
           modelRef.current.scale.set(1, 1, 1);
           scene.add(modelRef.current);
-          setStatus("Model ready");
+          setStatus("Model ready (3D preview)");
         },
         undefined,
         () => {

@@ -1,0 +1,48 @@
+﻿<html>
+<head>
+<meta charset="UTF-8" />
+<title>App API Dictionary</title>
+<style>
+body { font-family: 'Times New Roman', serif; font-size: 12pt; }
+h2 { text-align:center; margin-bottom: 6px; }
+.caption { text-align:center; font-weight:bold; margin: 8px 0; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+th, td { border: 1px solid #000; padding: 6px; vertical-align: top; }
+th { text-align:center; font-weight:bold; }
+</style>
+</head>
+<body>
+<h2>APP.PY API DATA DICTIONARY</h2>
+<div class="caption">Table A.1 FastAPI Endpoint Dictionary</div>
+<table>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Parameters / Body</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+<tr><td>/</td><td>GET</td><td>N/A</td><td>{"message":"Furniture API running"}</td><td>Health/root endpoint.</td></tr>
+<tr><td>/auth/request-otp</td><td>POST</td><td>{email, purpose, password?}</td><td>OTP send status</td><td>Sends OTP for signup/login/reset password.</td></tr>
+<tr><td>/auth/signup</td><td>POST</td><td>{name, email, password, otp}</td><td>{token, user}</td><td>Registers user after OTP verification.</td></tr>
+<tr><td>/auth/login</td><td>POST</td><td>{email, password, otp}</td><td>{token, user}</td><td>Password + OTP login flow.</td></tr>
+<tr><td>/auth/login-otp</td><td>POST</td><td>{email, otp}</td><td>{token, user}</td><td>OTP-only login for eligible accounts.</td></tr>
+<tr><td>/auth/forgot-password/reset</td><td>POST</td><td>{email, otp, new_password}</td><td>{message}</td><td>Resets user password using OTP.</td></tr>
+<tr><td>/auth/google</td><td>POST</td><td>{credential}</td><td>{token, user}</td><td>Google OAuth sign-in/up.</td></tr>
+<tr><td>/products</td><td>GET</td><td>N/A</td><td>List&lt;product&gt;</td><td>Fetches all products.</td></tr>
+<tr><td>/products/{product_id}</td><td>GET</td><td>product_id(path)</td><td>product object</td><td>Fetch single product details.</td></tr>
+<tr><td>/products</td><td>POST</td><td>FormData(name,price,description,collection,image,model)</td><td>created product</td><td>Admin creates a product.</td></tr>
+<tr><td>/products/{product_id}</td><td>PUT</td><td>path + FormData fields</td><td>updated product</td><td>Admin updates product info/media.</td></tr>
+<tr><td>/products/{product_id}</td><td>DELETE</td><td>product_id(path)</td><td>{message}</td><td>Admin deletes a product.</td></tr>
+<tr><td>/orders</td><td>POST</td><td>OrderCreate JSON</td><td>{id, receipt_email_sent}</td><td>Creates order after checkout.</td></tr>
+<tr><td>/orders</td><td>GET</td><td>N/A</td><td>List&lt;order&gt;</td><td>Returns logged-in user's orders.</td></tr>
+<tr><td>/orders/all</td><td>GET</td><td>N/A</td><td>List&lt;order&gt;</td><td>Admin view of all orders.</td></tr>
+<tr><td>/payments/config</td><td>GET</td><td>N/A</td><td>{key_id}</td><td>Returns Razorpay public key id.</td></tr>
+<tr><td>/payments/create-order</td><td>POST</td><td>{amount,currency,receipt,notes}</td><td>{key_id, order}</td><td>Creates Razorpay order.</td></tr>
+<tr><td>/payments/verify</td><td>POST</td><td>{razorpay_order_id, razorpay_payment_id, razorpay_signature}</td><td>{verified:true}</td><td>Verifies Razorpay payment signature.</td></tr>
+<tr><td>/analytics/visit</td><td>POST</td><td>Request headers/meta</td><td>{ok:true}</td><td>Stores visitor analytics event.</td></tr>
+<tr><td>/analytics/summary</td><td>GET</td><td>N/A</td><td>analytics summary JSON</td><td>Admin analytics dashboard data.</td></tr>
+<tr><td>/static/*</td><td>GET</td><td>File path</td><td>Static file</td><td>Serves uploaded images/models.</td></tr>
+</table>
+</body>
+</html>

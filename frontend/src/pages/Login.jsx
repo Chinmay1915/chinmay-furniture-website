@@ -34,8 +34,13 @@ export default function Login() {
   const [resetInfo, setResetInfo] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
   const [sendingResetOtp, setSendingResetOtp] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
   const { setAuthData } = useAuth();
   const navigate = useNavigate();
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const isGmail = /^[a-z0-9._%+-]+@gmail\.com$/.test(normalizedEmail);
 
   const completeAuth = (data) => {
     setAuthData(data.token, data.user);
@@ -63,8 +68,10 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setOtpInfo("");
-    if (!email.includes("@")) return setError("Enter a valid email address.");
-    if (!otp.trim() || otp.trim().length !== 6) return setError("Enter the 6-digit OTP.");
+    if (!isGmail) return setError("Enter a valid Gmail address.");
+    if (!otp.trim() || otp.trim().length !== 6 || !/^[0-9]{6}$/.test(otp.trim())) {
+      return setError("Enter the valid 6-digit OTP.");
+    }
     if (loginMode === "password" && password.length < 6) {
       return setError("Password must be at least 6 characters.");
     }
@@ -87,7 +94,7 @@ export default function Login() {
   const handleSendOtp = async () => {
     setError("");
     setOtpInfo("");
-    if (!email.includes("@")) return setError("Enter a valid email address first.");
+    if (!isGmail) return setError("Enter a valid Gmail address first.");
     if (loginMode === "password" && password.length < 6) {
       return setError("Enter password first to send login OTP.");
     }
@@ -96,10 +103,12 @@ export default function Login() {
     try {
       const payload =
         loginMode === "password"
-          ? { email, password, purpose: "login" }
-          : { email, purpose: "login" };
-      await api.post("/auth/request-otp", payload);
-      setOtpInfo("OTP sent to your registered email. It is valid for 10 minutes.");
+          ? { email: normalizedEmail, password, purpose: "login" }
+          : { email: normalizedEmail, purpose: "login" };
+      const res = await api.post("/auth/request-otp", payload);
+      if (res.data?.message) setOtpInfo(res.data.message);
+      else setOtpInfo("OTP sent to your registered email. It is valid for 10 minutes.");
+      setError("");
     } catch (err) {
       const detail = err.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Could not send OTP.");
@@ -111,7 +120,7 @@ export default function Login() {
   const handleSendResetOtp = async () => {
     setError("");
     setResetInfo("");
-    if (!email.includes("@")) return setError("Enter your registered email first.");
+    if (!isGmail) return setError("Enter your registered Gmail first.");
     setSendingResetOtp(true);
     try {
       await api.post("/auth/request-otp", { email, purpose: "reset" });
@@ -128,7 +137,7 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setResetInfo("");
-    if (!email.includes("@")) return setError("Enter your registered email first.");
+    if (!isGmail) return setError("Enter your registered Gmail first.");
     if (!resetOtp.trim() || resetOtp.trim().length !== 6) return setError("Enter the 6-digit reset OTP.");
     if (newPassword.length < 6) return setError("New password must be at least 6 characters.");
     if (newPassword !== confirmNewPassword) return setError("New password and confirm password do not match.");
@@ -181,9 +190,30 @@ export default function Login() {
               Google Email OTP
             </button>
           </div>
-          <input className="w-full border border-slate-300 p-3 rounded-xl" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input
+            className="w-full border border-slate-300 p-3 rounded-xl"
+            placeholder="Email Address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => setEmailTouched(true)}
+            required
+          />
+          {emailTouched && email.trim() && !isGmail && (
+            <p className="text-xs text-red-600">Use a valid Gmail address (example@gmail.com).</p>
+          )}
           {loginMode === "password" && (
-            <input className="w-full border border-slate-300 p-3 rounded-xl" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input
+              className="w-full border border-slate-300 p-3 rounded-xl"
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onBlur={() => setPasswordTouched(true)}
+              required
+            />
+          )}
+          {passwordTouched && loginMode === "password" && !password && (
+            <p className="text-xs text-red-600">Please fill this section before continuing.</p>
           )}
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <input className="w-full border border-slate-300 p-3 rounded-xl" placeholder="Enter 6-digit OTP" value={otp} onChange={(e) => setOtp(e.target.value)} maxLength={6} required />
@@ -201,7 +231,7 @@ export default function Login() {
           </button>
           {otpInfo && <p className="text-emerald-700 text-sm">{otpInfo}</p>}
           {resetInfo && <p className="text-emerald-700 text-sm">{resetInfo}</p>}
-          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {error && !otpInfo && <p className="text-red-600 text-sm">{error}</p>}
         </form>
 
         <button

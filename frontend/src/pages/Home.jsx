@@ -2,6 +2,7 @@
 import { Link } from "react-router-dom";
 import api from "../services/api.js";
 import ProductCard from "../components/ProductCard.jsx";
+import SkeletonCard from "../components/SkeletonCard.jsx";
 import { sampleProducts, collections, bestSellers } from "../services/mockData.js";
 import { formatINR } from "../utils/format.js";
 import { handleProductImageError } from "../utils/imageFallback.js";
@@ -38,8 +39,11 @@ const heroSlides = [
 export default function Home() {
   const [products, setProducts] = useState([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [slide, setSlide] = useState(0);
   const [tab, setTab] = useState("new");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("featured");
 
   useEffect(() => {
     localStorage.removeItem("products_cache");
@@ -69,8 +73,12 @@ export default function Home() {
       .catch(() => {
         setError("Backend not reachable, showing sample data.");
         setProducts([]);
+      })
+      .finally(() => {
+        setLoading(false);
       });
   }, []);
+
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -85,25 +93,50 @@ export default function Home() {
     products.forEach((p) => byId.set(p.id, p));
     return Array.from(byId.values());
   }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    const result = displayProducts.filter((product) => {
+      const text = `${product.name || ""} ${product.description || ""} ${product.collection || ""}`.toLowerCase();
+      return !keyword || text.includes(keyword);
+    });
+
+    return [...result].sort((a, b) => {
+      if (sortBy === "price-low") return Number(a.price || 0) - Number(b.price || 0);
+      if (sortBy === "price-high") return Number(b.price || 0) - Number(a.price || 0);
+      if (sortBy === "name") return (a.name || "").localeCompare(b.name || "");
+      return 0;
+    });
+  }, [displayProducts, search, sortBy]);
   const bestSellerProducts = useMemo(
     () => bestSellers.map((id) => displayProducts.find((p) => p.id === id)).filter(Boolean),
     [displayProducts]
   );
 
   const tabProducts = tab === "new"
-    ? displayProducts.slice(0, 8)
+    ? filteredProducts.slice(0, 8)
     : bestSellerProducts.length
       ? bestSellerProducts
-      : displayProducts.slice(0, 8);
+      : filteredProducts.slice(0, 8);
 
   const categoryShowcase = useMemo(() => displayProducts.slice(0, 4), [displayProducts]);
   const offerTiles = useMemo(() => {
     if (collections.length >= 4) return collections.slice(0, 4);
     return [...collections, ...collections].slice(0, 4);
   }, []);
+  const collectionSections = useMemo(() => {
+    const normalize = (value) => (value || "").toLowerCase();
+    return collections.map((c) => ({
+      ...c,
+      id: `collection-${c.name.replace(/\s+/g, "-").toLowerCase()}`,
+      products: displayProducts.filter(
+        (p) => normalize(p.collection) === normalize(c.name)
+      ),
+    }));
+  }, [displayProducts]);
 
   return (
-    <div className="pb-16">
+    <div className="pb-16 page-fade">
       <section className="container-page py-8">
         <div className="relative overflow-hidden rounded-3xl shadow-xl">
           {heroSlides.map((s, idx) => (
@@ -147,7 +180,7 @@ export default function Home() {
           {collections.map((c) => (
             <a
               key={c.name}
-              href="#browse"
+              href={`#collection-${c.name.replace(/\s+/g, "-").toLowerCase()}`}
               className="relative overflow-hidden rounded-2xl shadow-sm"
             >
               <img src={c.image} alt={c.name} className="h-64 w-full object-cover" />
@@ -198,26 +231,50 @@ export default function Home() {
       </section>
 
       <section id="browse" className="container-page py-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <h2 className="section-title">Browse Our Items</h2>
-          <div className="flex gap-6 text-sm">
-            <button
-              className={`uppercase tracking-wide ${tab === "new" ? "border-b border-slate-900" : "text-slate-500"}`}
-              onClick={() => setTab("new")}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-slate-400"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search products"
+            />
+            <select
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-slate-400"
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
             >
-              New Arrivals
-            </button>
-            <button
-              className={`uppercase tracking-wide ${tab === "best" ? "border-b border-slate-900" : "text-slate-500"}`}
-              onClick={() => setTab("best")}
-            >
-              Best Sellers
-            </button>
+              <option value="featured">Featured</option>
+              <option value="price-low">Price: Low to High</option>
+              <option value="price-high">Price: High to Low</option>
+              <option value="name">Name</option>
+            </select>
+            <div className="flex gap-5 text-sm">
+              <button
+                className={`uppercase tracking-wide ${tab === "new" ? "border-b border-slate-900" : "text-slate-500"}`}
+                onClick={() => setTab("new")}
+              >
+                New Arrivals
+              </button>
+              <button
+                className={`uppercase tracking-wide ${tab === "best" ? "border-b border-slate-900" : "text-slate-500"}`}
+                onClick={() => setTab("best")}
+              >
+                Best Sellers
+              </button>
+            </div>
           </div>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-          {tabProducts.map((product) => (
-            <div key={product.id} className="bg-white rounded-2xl overflow-hidden">
+          {loading
+            ? Array.from({ length: 4 }).map((_, idx) => <SkeletonCard key={idx} />)
+            : tabProducts.map((product) => (
+            <Link
+              key={product.id}
+              to={`/product/${product.id}`}
+              className="bg-white rounded-2xl overflow-hidden block hover:shadow-md transition"
+            >
               <img
                 src={product.image_url}
                 alt={product.name}
@@ -235,13 +292,16 @@ export default function Home() {
                   <span className="h-4 w-4 rounded-full bg-amber-300" />
                   <span className="h-4 w-4 rounded-full bg-slate-200" />
                 </div>
-                <Link to={`/product/${product.id}`} className="btn-outline mt-4 inline-block">
-                  View
-                </Link>
+                <span className="btn-outline mt-4 inline-block">View</span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
+        {!loading && tabProducts.length === 0 && (
+          <div className="mt-6 rounded-2xl border border-slate-100 bg-white p-6 text-center text-slate-500">
+            No products match your search.
+          </div>
+        )}
       </section>
 
       <section className="container-page py-8">
@@ -275,6 +335,49 @@ export default function Home() {
             <button className="btn mt-6">Starting From Rs. 9,999</button>
           </div>
         </div>
+      </section>
+
+      <section className="container-page py-8 space-y-10">
+        {collectionSections.map((section) => (
+          <div key={section.id} id={section.id}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="section-title">{section.name}</h2>
+              <p className="text-sm text-slate-500">Curated for {section.name.toLowerCase()} spaces</p>
+            </div>
+            {section.products.length === 0 ? (
+              <div className="bg-white rounded-2xl p-6 text-sm text-slate-500">
+                No products in this collection yet. Add one in the Admin panel.
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {section.products.map((product) => (
+                  <Link
+                    key={product.id}
+                    to={`/product/${product.id}`}
+                    className="bg-white rounded-2xl overflow-hidden block hover:shadow-md transition"
+                  >
+                    <img
+                      src={product.image_url}
+                      alt={product.name}
+                      className="h-56 w-full object-cover"
+                      onError={handleProductImageError}
+                    />
+                    <div className="p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold">{product.name}</p>
+                        <p className="text-sm">{formatINR(product.price)}</p>
+                      </div>
+                      <p className="text-xs text-slate-500 uppercase mt-1">
+                        {product.collection || section.name}
+                      </p>
+                      <span className="btn-outline mt-4 inline-block">View</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
       </section>
 
       <section id="about-us" className="container-page py-8">
@@ -387,10 +490,18 @@ export default function Home() {
         </div>
         {error && <p className="text-sm text-amber-600 mb-3">{error}</p>}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {displayProducts.map((product) => (
+          {loading
+            ? Array.from({ length: 6 }).map((_, idx) => <SkeletonCard key={idx} />)
+            : filteredProducts.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}
         </div>
+        {!loading && filteredProducts.length === 0 && (
+          <div className="mt-6 rounded-2xl border border-slate-100 bg-white p-8 text-center">
+            <h3 className="text-xl font-semibold">No products found</h3>
+            <p className="mt-2 text-sm text-slate-500">Try a different search or clear the filter.</p>
+          </div>
+        )}
       </section>
     </div>
   );

@@ -9,13 +9,24 @@ export default function Checkout() {
   const [customerName, setCustomerName] = useState("");
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("+91");
   const [pincode, setPincode] = useState("");
   const [country, setCountry] = useState("India");
   const [stateName, setStateName] = useState("");
   const [landmark, setLandmark] = useState("");
   const [message, setMessage] = useState("");
   const [isPaying, setIsPaying] = useState(false);
+  const [touched, setTouched] = useState({});
   const navigate = useNavigate();
+
+  const allowedCountries = ["India", "United States", "United Kingdom", "UAE", "Singapore"];
+  const allowedStates = {
+    India: ["Delhi", "Maharashtra", "Karnataka", "Uttar Pradesh", "Tamil Nadu", "Punjab", "Gujarat", "Rajasthan"],
+    "United States": ["California", "New York", "Texas", "Florida", "Illinois"],
+    "United Kingdom": ["England", "Scotland", "Wales", "Northern Ireland"],
+    UAE: ["Dubai", "Abu Dhabi", "Sharjah"],
+    Singapore: ["Central", "East", "North", "North-East", "West"],
+  };
 
   const loadRazorpayScript = () =>
     new Promise((resolve) => {
@@ -36,12 +47,42 @@ export default function Checkout() {
     if (items.length === 0) return;
     setMessage("");
 
-    if (phone.trim().length < 10) {
-      setMessage("Phone number must be at least 10 digits.");
+    const nameClean = customerName.trim();
+    if (!nameClean) {
+      setMessage("Please fill the name before proceeding.");
       return;
     }
-    if (pincode.trim().length !== 6) {
-      setMessage("Pincode must be 6 digits.");
+    if (nameClean.length < 2 || nameClean.length > 20) {
+      setMessage("Name must be between 2 and 20 characters.");
+      return;
+    }
+    if (!/^[A-Za-z ]+$/.test(nameClean)) {
+      setMessage("Name must contain only letters.");
+      return;
+    }
+    if (!phone.trim() || !/^[0-9]+$/.test(phone.trim())) {
+      setMessage("Phone number must be numeric only.");
+      return;
+    }
+    if (phone.trim().length !== 10) {
+      setMessage("Phone number must be exactly 10 digits.");
+      return;
+    }
+    const phoneDigits = `${countryCode.replace("+", "")}${phone}`;
+    if (!pincode.trim() || !/^[0-9]{6}$/.test(pincode.trim())) {
+      setMessage("Pincode must be exactly 6 digits.");
+      return;
+    }
+    if (!allowedCountries.includes(country)) {
+      setMessage("Please select a valid country.");
+      return;
+    }
+    if (!allowedStates[country]?.includes(stateName)) {
+      setMessage("Please select a valid state for the chosen country.");
+      return;
+    }
+    if (!address.trim()) {
+      setMessage("Please fill the address before proceeding.");
       return;
     }
 
@@ -84,7 +125,7 @@ export default function Checkout() {
         prefill: {
           name: customerName,
           email: userEmail,
-          contact: phone,
+          contact: phoneDigits,
         },
         notes: {
           address,
@@ -116,7 +157,7 @@ export default function Checkout() {
               total_price: total,
               customer_name: customerName,
               address,
-              phone,
+              phone: phoneDigits,
               pincode,
               country,
               state: stateName,
@@ -165,54 +206,115 @@ export default function Checkout() {
               placeholder="Full name"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
+              onBlur={() => setTouched((prev) => ({ ...prev, name: true }))}
+              maxLength={20}
               required
             />
-            <input
-              className="w-full border p-3 rounded-xl"
-              placeholder="Phone number"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
-            />
+            {touched.name && !customerName.trim() && (
+              <p className="text-xs text-red-600">Please fill this section before continuing.</p>
+            )}
+            <div className="grid grid-cols-[120px_1fr] gap-3">
+              <select
+                className="border p-3 rounded-xl bg-white"
+                value={countryCode}
+                onChange={(e) => setCountryCode(e.target.value)}
+                disabled={!customerName.trim()}
+              >
+                <option value="+91">+91 (IN)</option>
+                <option value="+1">+1 (US)</option>
+                <option value="+44">+44 (UK)</option>
+                <option value="+971">+971 (UAE)</option>
+                <option value="+65">+65 (SG)</option>
+              </select>
+              <input
+                className="w-full border p-3 rounded-xl"
+                placeholder="Phone number"
+                value={phone}
+                onChange={(e) => {
+                  const next = e.target.value.replace(/[^0-9]/g, "");
+                  if (next.length <= 10) setPhone(next);
+                }}
+                onBlur={() => setTouched((prev) => ({ ...prev, phone: true }))}
+                disabled={!customerName.trim()}
+                maxLength={10}
+                required
+              />
+            </div>
+            {touched.phone && phone.trim() && !/^[0-9]+$/.test(phone.trim()) && (
+              <p className="text-xs text-red-600">Phone number must be numeric.</p>
+            )}
+            {touched.phone && phone.trim() && phone.trim().length !== 10 && (
+              <p className="text-xs text-red-600">Phone number must be exactly 10 digits.</p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <input
                 className="w-full border p-3 rounded-xl"
                 placeholder="Pincode"
                 value={pincode}
-                onChange={(e) => setPincode(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value.replace(/[^0-9]/g, "");
+                  if (next.length <= 6) setPincode(next);
+                }}
+                onBlur={() => setTouched((prev) => ({ ...prev, pincode: true }))}
+                disabled={!phone.trim()}
+                maxLength={6}
                 required
               />
-              <input
-                className="w-full border p-3 rounded-xl"
-                placeholder="Country"
+              <select
+                className="w-full border p-3 rounded-xl bg-white"
                 value={country}
-                onChange={(e) => setCountry(e.target.value)}
+                onChange={(e) => {
+                  setCountry(e.target.value);
+                  setStateName("");
+                }}
+                disabled={!pincode.trim()}
                 required
-              />
+              >
+                {allowedCountries.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
+            {touched.pincode && pincode.trim() && pincode.trim().length !== 6 && (
+              <p className="text-xs text-red-600">Pincode must be exactly 6 digits.</p>
+            )}
             <div className="grid grid-cols-2 gap-3">
-              <input
-                className="w-full border p-3 rounded-xl"
-                placeholder="State"
+              <select
+                className="w-full border p-3 rounded-xl bg-white"
                 value={stateName}
                 onChange={(e) => setStateName(e.target.value)}
+                disabled={!country.trim()}
                 required
-              />
+              >
+                <option value="">Select state</option>
+                {(allowedStates[country] || []).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
               <input
                 className="w-full border p-3 rounded-xl"
                 placeholder="Landmark"
                 value={landmark}
-                onChange={(e) => setLandmark(e.target.value)}
+                onChange={(e) => setLandmark(e.target.value.replace(/[^A-Za-z0-9 ,.-]/g, ""))}
+                disabled={!stateName.trim()}
                 required
               />
             </div>
+            {touched.landmark && landmark.trim() && !/^[A-Za-z0-9 ,.-]+$/.test(landmark.trim()) && (
+              <p className="text-xs text-red-600">Landmark must not include special symbols.</p>
+            )}
             <textarea
               className="w-full border p-3 rounded-xl"
               placeholder="Address"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
+              onBlur={() => setTouched((prev) => ({ ...prev, address: true }))}
+              disabled={!landmark.trim()}
               required
             />
+            {touched.address && !address.trim() && (
+              <p className="text-xs text-red-600">Please fill this section before continuing.</p>
+            )}
             <button className="btn w-full" type="submit" disabled={isPaying}>
               {isPaying ? "Processing..." : `Pay with Razorpay - ${formatINR(total)}`}
             </button>

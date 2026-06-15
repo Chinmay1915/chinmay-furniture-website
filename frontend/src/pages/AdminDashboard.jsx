@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api.js";
 import { formatINR } from "../utils/format.js";
+import { sampleProducts } from "../services/mockData.js";
 
 function Sparkline({ values = [], color = "#f97316" }) {
   const width = 160;
@@ -89,6 +90,15 @@ export default function AdminDashboard() {
     ctaText: "Explore More",
   });
   const [timeRange, setTimeRange] = useState("today");
+  const [reportFrom, setReportFrom] = useState("");
+  const [reportTo, setReportTo] = useState("");
+  const [reportError, setReportError] = useState("");
+  const combinedProducts = useMemo(() => {
+    const map = new Map();
+    sampleProducts.forEach((p) => map.set(p.id, { ...p, _source: "sample" }));
+    products.forEach((p) => map.set(p.id, { ...p, _source: "db" }));
+    return Array.from(map.values());
+  }, [products]);
 
   const getErrorMessage = (err, fallback) => {
     const detail = err?.response?.data?.detail;
@@ -105,6 +115,29 @@ export default function AdminDashboard() {
       navigate("/login");
     }
   }, [error, navigate]);
+
+  useEffect(() => {
+    if (!reportFrom || !reportTo) return;
+    const from = new Date(reportFrom);
+    const to = new Date(reportTo);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return;
+    if (from > to) {
+      setReportFrom(reportTo);
+      setReportTo(reportFrom);
+      setReportError("Dates were swapped because From date was after To date.");
+    }
+  }, [reportFrom, reportTo]);
+
+  useEffect(() => {
+    if (!reportFrom) return;
+    const from = new Date(reportFrom);
+    if (Number.isNaN(from.getTime())) return;
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    if (from > today) {
+      setReportError("From date cannot be in the future.");
+    }
+  }, [reportFrom]);
 
   const loadData = async () => {
     setError("");
@@ -170,6 +203,13 @@ export default function AdminDashboard() {
       const created = new Date(raw);
       if (Number.isNaN(created.getTime())) return false;
 
+      if (reportFrom && reportTo) {
+        const from = new Date(reportFrom);
+        const to = new Date(reportTo);
+        if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return false;
+        to.setHours(23, 59, 59, 999);
+        return created >= from && created <= to;
+      }
       if (timeRange === "today") return created >= startOfToday;
       if (timeRange === "yesterday") return created >= startOfYesterday && created < startOfToday;
       if (timeRange === "7d") {
@@ -189,7 +229,7 @@ export default function AdminDashboard() {
       }
       return true;
     });
-  }, [orders, timeRange]);
+  }, [orders, timeRange, reportFrom, reportTo]);
 
   const periodStats = useMemo(() => {
     const sales = filteredOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
@@ -225,16 +265,6 @@ export default function AdminDashboard() {
       .slice(-7);
   }, [filteredOrders]);
 
-  const visitsSeries = analytics.visits_by_day.map((d) => d.count);
-  const salesSeries = salesByDay.map((d) => d.value);
-  const maxSalesValue = Math.max(...salesByDay.map((d) => Number(d.value) || 0), 1);
-  const maxVisitsValue = Math.max(...analytics.visits_by_day.map((d) => Number(d.count) || 0), 1);
-  const marketRegions = {
-    Asia: ["India", "Japan", "Singapore", "UAE"],
-    Europe: ["Germany", "France", "Italy", "Spain"],
-    USA: ["United States", "Canada", "Mexico"],
-  };
-
   const customerInsights = useMemo(() => {
     const map = {};
     filteredOrders.forEach((order) => {
@@ -268,6 +298,56 @@ export default function AdminDashboard() {
     if (timeRange === "365d") return "Last 365 Days";
     return "Selected Range";
   }, [timeRange]);
+
+  const timeRangeOptions = [
+    { key: "today", label: "Today" },
+    { key: "yesterday", label: "Yesterday" },
+    { key: "7d", label: "Last 7 Days" },
+    { key: "30d", label: "Last 30 Days" },
+    { key: "365d", label: "Last 365 Days" },
+  ];
+
+  const filteredVisitsByDay = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+
+    return analytics.visits_by_day.filter((entry) => {
+      const raw = entry.date || entry._id || entry.day;
+      if (!raw) return false;
+      const created = new Date(raw);
+      if (Number.isNaN(created.getTime())) return false;
+      if (timeRange === "today") return created >= startOfToday;
+      if (timeRange === "yesterday") return created >= startOfYesterday && created < startOfToday;
+      if (timeRange === "7d") {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 7);
+        return created >= from;
+      }
+      if (timeRange === "30d") {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 30);
+        return created >= from;
+      }
+      if (timeRange === "365d") {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 365);
+        return created >= from;
+      }
+      return true;
+    });
+  }, [analytics.visits_by_day, timeRange]);
+
+  const visitsSeries = filteredVisitsByDay.map((d) => d.count);
+  const salesSeries = salesByDay.map((d) => d.value);
+  const maxSalesValue = Math.max(...salesByDay.map((d) => Number(d.value) || 0), 1);
+  const maxVisitsValue = Math.max(...filteredVisitsByDay.map((d) => Number(d.count) || 0), 1);
+  const marketRegions = {
+    Asia: ["India", "Japan", "Singapore", "UAE"],
+    Europe: ["Germany", "France", "Italy", "Spain"],
+    USA: ["United States", "Canada", "Mexico"],
+  };
 
   const sectionTitles = {
     analytics: "Analytics Overview",
@@ -417,6 +497,84 @@ export default function AdminDashboard() {
     setNewCollection("");
   };
 
+  const handleGenerateReport = () => {
+    setReportError("");
+    if (!reportFrom || !reportTo) {
+      setReportError("Please select both From and To dates.");
+      return;
+    }
+    const from = new Date(reportFrom);
+    const to = new Date(reportTo);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      setReportError("Please select valid dates.");
+      return;
+    }
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    if (from > today || to > today) {
+      setReportError("Dates cannot be in the future.");
+      return;
+    }
+    if (from > to) {
+      setReportError("From date cannot be after To date.");
+      return;
+    }
+    const diffDays = Math.ceil((to - from) / (1000 * 60 * 60 * 24)) + 1;
+    if (diffDays > 365) {
+      setReportError("Please choose a range within 365 days.");
+      return;
+    }
+    const w = window.open("", "_blank", "width=620,height=720");
+    if (!w) return;
+    const rows = filteredOrders
+      .map(
+        (o) => `
+          <tr>
+            <td>${o.id}</td>
+            <td>${o.customer_name}</td>
+            <td>${o.created_at}</td>
+            <td style="text-align:right;">${formatINR(o.total_price)}</td>
+          </tr>`
+      )
+      .join("");
+    const total = filteredOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
+    w.document.write(`
+      <html>
+        <head>
+          <title>Orders Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 16px; }
+            h2 { margin: 0 0 8px; }
+            .muted { color: #555; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            td, th { border-bottom: 1px solid #ddd; padding: 6px; font-size: 12px; }
+            .total { margin-top: 12px; font-weight: bold; text-align: right; }
+          </style>
+        </head>
+        <body>
+          <h2>BR Furniture - Orders Report</h2>
+          <div class="muted">From: ${reportFrom} To: ${reportTo}</div>
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align:left;">Order ID</th>
+                <th style="text-align:left;">Customer</th>
+                <th style="text-align:left;">Date</th>
+                <th style="text-align:right;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || "<tr><td colspan='4'>No orders in this range.</td></tr>"}
+            </tbody>
+          </table>
+          <div class="total">Total Sales: ${formatINR(total)}</div>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    w.document.close();
+  };
+
   const addCampaign = () => {
     setError("");
     setMessage("");
@@ -514,29 +672,18 @@ export default function AdminDashboard() {
               <h2 className="text-2xl font-semibold">{sectionTitles[active] || "Admin"}</h2>
               <p className="text-sm text-slate-500">Last refreshed just now</p>
             </div>
-            <div className="flex gap-2">
-              <div className="flex items-center gap-2">
-                {[
-                  { key: "today", label: "Today" },
-                  { key: "yesterday", label: "Yesterday" },
-                  { key: "7d", label: "7D" },
-                  { key: "30d", label: "30D" },
-                  { key: "365d", label: "365D" },
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className={`px-3 py-2 rounded-md border text-sm ${
-                      timeRange === item.key
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "border-slate-300 hover:border-slate-400"
-                    }`}
-                    onClick={() => setTimeRange(item.key)}
-                  >
+            <div className="flex gap-2 items-center">
+              <select
+                className="px-3 py-2 rounded-md border text-sm bg-white border-slate-300"
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value)}
+              >
+                {timeRangeOptions.map((item) => (
+                  <option key={item.key} value={item.key}>
                     {item.label}
-                  </button>
+                  </option>
                 ))}
-              </div>
+              </select>
               <button className="btn-outline">All channels</button>
             </div>
           </div>
@@ -601,8 +748,8 @@ export default function AdminDashboard() {
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h3 className="text-lg font-semibold mb-2">Sessions over time</h3>
                   <div className="h-32 flex items-end gap-2 overflow-hidden">
-                    {analytics.visits_by_day.map((d) => (
-                      <div key={d.date} className="flex-1">
+                    {filteredVisitsByDay.map((d) => (
+                      <div key={d.date || d._id || d.day} className="flex-1">
                         <div
                           className="bg-sky-400/80 rounded-md"
                           style={{ height: `${getScaledBarHeight(d.count, maxVisitsValue, 128)}px` }}
@@ -670,8 +817,34 @@ export default function AdminDashboard() {
           {active === "orders" && (
             <div className="bg-white p-4 rounded-lg shadow-sm">
               <h3 className="text-xl font-semibold mb-3">Orders</h3>
+              <div className="grid md:grid-cols-[1fr_1fr_auto] gap-3 items-end mb-4">
+                <div>
+                  <label className="text-sm text-slate-600">From</label>
+                  <input
+                    type="date"
+                    className="w-full border p-2 rounded"
+                    value={reportFrom}
+                    onChange={(e) => setReportFrom(e.target.value)}
+                    max={new Date().toISOString().slice(0, 10)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-slate-600">To</label>
+                  <input
+                    type="date"
+                    className="w-full border p-2 rounded"
+                    value={reportTo}
+                    onChange={(e) => setReportTo(e.target.value)}
+                    max={new Date().toISOString().slice(0, 10)}
+                  />
+                </div>
+                <button className="btn" type="button" onClick={handleGenerateReport}>
+                  Generate Report
+                </button>
+              </div>
+              {reportError && <p className="text-sm text-red-600 mb-3">{reportError}</p>}
               <div className="space-y-3">
-                {orders.map((order) => (
+                {filteredOrders.map((order) => (
                   <div key={order.id} className="bg-slate-50 p-4 rounded-lg">
                     <p className="text-sm text-slate-600">Order ID: {order.id}</p>
                     <p className="text-sm text-slate-600">Placed: {order.created_at}</p>
@@ -801,12 +974,12 @@ export default function AdminDashboard() {
               <div className="lg:col-span-2">
                 <h3 className="text-xl font-semibold mb-3">Products</h3>
                 <div className="space-y-2">
-                  {products.length === 0 && (
+                  {combinedProducts.length === 0 && (
                     <div className="bg-white p-3 rounded text-sm text-slate-600">
-                      No products found in the database yet. Add one using the form above.
+                      No products found yet. Add one using the form above.
                     </div>
                   )}
-                  {products.map((p) => (
+                  {combinedProducts.map((p) => (
                     <div key={p.id} className="flex items-center justify-between bg-white p-3 rounded">
                       <div>
                         <p className="font-semibold">{p.name}</p>
@@ -814,9 +987,15 @@ export default function AdminDashboard() {
                           {formatINR(p.price)} | {p.collection || "Featured"}
                         </p>
                       </div>
-                      <button className="btn-outline" onClick={() => handleDelete(p.id)}>
-                        Delete
-                      </button>
+                      {p._source === "db" ? (
+                        <button className="btn-outline" onClick={() => handleDelete(p.id)}>
+                          Delete
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                          Sample
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>

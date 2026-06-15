@@ -1,0 +1,45 @@
+DATA DICTIONARY
+
+Table Name	Field Name	Data Type	Description
+users	id	OBJECTID NOT NULL	Primary key for user
+users	name	VARCHAR(100) NOT NULL	User full name
+users	email	VARCHAR(150) NOT NULL UNIQUE	User email (Gmail)
+users	password	VARCHAR(255) NULL	Hashed password (null for Google users)
+users	is_admin	BOOLEAN NOT NULL	Admin flag
+users	auth_provider	VARCHAR(20) NULL	Auth provider (google/password)
+products	id	VARCHAR(50) NOT NULL	Primary key for product
+products	name	VARCHAR(150) NOT NULL	Product name
+products	price	DECIMAL(10,2) NOT NULL	Product price
+products	description	TEXT NOT NULL	Product description
+products	collection	VARCHAR(50) NOT NULL	Collection/category name
+products	image_url	VARCHAR(255) NOT NULL	Product image URL
+products	model_url	VARCHAR(255) NULL	3D model URL (GLB)
+orders	id	OBJECTID NOT NULL	Primary key for order
+orders	user_id	OBJECTID NOT NULL	User who placed order
+orders	total_price	DECIMAL(10,2) NOT NULL	Order total
+orders	customer_name	VARCHAR(100) NOT NULL	Shipping name
+orders	address	TEXT NOT NULL	Shipping address
+orders	phone	VARCHAR(20) NOT NULL	Phone with country code
+orders	pincode	VARCHAR(10) NOT NULL	Postal code
+orders	country	VARCHAR(50) NOT NULL	Country name
+orders	state	VARCHAR(50) NOT NULL	State/region
+orders	landmark	VARCHAR(100) NOT NULL	Nearby landmark
+orders	payment_id	VARCHAR(50) NULL	Razorpay payment id
+orders	payment_order_id	VARCHAR(50) NULL	Razorpay order id
+orders	payment_signature	VARCHAR(255) NULL	Razorpay signature
+orders	created_at	DATETIME NOT NULL	Order creation time
+order_items	order_id	OBJECTID NOT NULL	Parent order id
+order_items	product_id	VARCHAR(50) NOT NULL	Product id
+order_items	name	VARCHAR(150) NOT NULL	Product name snapshot
+order_items	price	DECIMAL(10,2) NOT NULL	Price per unit
+order_items	quantity	INT NOT NULL	Quantity ordered
+email_otps	email	VARCHAR(150) NOT NULL	OTP email
+email_otps	purpose	VARCHAR(20) NOT NULL	OTP purpose (signup/login/reset)
+email_otps	code	VARCHAR(6) NOT NULL	OTP code
+email_otps	used	BOOLEAN NOT NULL	OTP used flag
+email_otps	created_at	DATETIME NOT NULL	OTP creation time
+email_otps	expires_at	DATETIME NOT NULL	OTP expiry time
+analytics_visits	_id	OBJECTID NOT NULL	Primary key for visit
+analytics_visits	country	VARCHAR(50) NULL	Visitor country
+analytics_visits	platform	VARCHAR(200) NULL	User agent / platform
+analytics_visits	created_at	DATETIME NOT NULL	Visit timestamp

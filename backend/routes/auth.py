@@ -35,7 +35,10 @@ OTP_DEV_FALLBACK = os.getenv("OTP_DEV_FALLBACK", "true").strip().lower() in {"1"
 def normalize_and_validate_email(raw_email: str) -> str:
     try:
         validated = validate_email(raw_email, check_deliverability=True)
-        return validated.normalized.lower()
+        normalized = validated.normalized.lower()
+        if not normalized.endswith("@gmail.com"):
+            raise HTTPException(status_code=400, detail="Please use a valid Gmail address")
+        return normalized
     except EmailNotValidError:
         raise HTTPException(
             status_code=400,
@@ -160,6 +163,19 @@ def request_otp(payload: OTPRequest):
     return {"message": "OTP sent successfully", "expires_in_minutes": OTP_TTL_MINUTES}
 
 
+@router.post("/check-email")
+def check_email(payload: OTPRequest):
+    db = get_db()
+    try:
+        db.command("ping")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database not available: {e}")
+
+    email = normalize_and_validate_email(payload.email)
+    existing = db.users.find_one({"email": email})
+    return {"exists": bool(existing)}
+
+
 @router.post("/signup")
 def signup(payload: SignupRequest):
     db = get_db()
@@ -170,8 +186,11 @@ def signup(payload: SignupRequest):
 
     email = normalize_and_validate_email(payload.email)
 
-    if len(payload.name.strip()) < 2:
-        raise HTTPException(status_code=400, detail="Name must be at least 2 characters")
+    name_clean = payload.name.strip()
+    if len(name_clean) < 2 or len(name_clean) > 20:
+        raise HTTPException(status_code=400, detail="Name must be between 2 and 20 characters")
+    if not all(ch.isalpha() or ch.isspace() for ch in name_clean):
+        raise HTTPException(status_code=400, detail="Name must contain only letters")
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 

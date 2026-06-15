@@ -32,10 +32,19 @@ def serialize_order(doc):
 
 @router.post("")
 def create_order(payload: OrderCreate, user=Depends(get_current_user)):
+    name_clean = payload.customer_name.strip()
+    if len(name_clean) < 2 or len(name_clean) > 20:
+        raise HTTPException(status_code=400, detail="Name must be between 2 and 20 characters")
+    if not all(ch.isalpha() or ch.isspace() for ch in name_clean):
+        raise HTTPException(status_code=400, detail="Name must contain only letters")
     if len(payload.phone.strip()) < 10:
         raise HTTPException(status_code=400, detail="Phone number must be at least 10 digits")
+    if not payload.phone.strip().isdigit():
+        raise HTTPException(status_code=400, detail="Phone number must contain only digits")
     if len(payload.pincode.strip()) < 6:
         raise HTTPException(status_code=400, detail="Pincode must be 6 digits")
+    if not payload.pincode.strip().isdigit():
+        raise HTTPException(status_code=400, detail="Pincode must contain only digits")
 
     db = get_db()
     doc = {

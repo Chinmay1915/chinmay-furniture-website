@@ -1,8 +1,11 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import api from "../services/api.js";
 import { useCart } from "../context/CartContext.jsx";
 import ARViewer from "../components/ARViewer.jsx";
+import ProductCard from "../components/ProductCard.jsx";
+import Toast from "../components/Toast.jsx";
 import { sampleProducts, productDetailsExtras } from "../services/mockData.js";
 import { formatINR } from "../utils/format.js";
 import { handleProductImageError } from "../utils/imageFallback.js";
@@ -15,6 +18,8 @@ export default function ProductDetails() {
   const [product, setProduct] = useState(null);
   const [showAR, setShowAR] = useState(false);
   const [bundleQty, setBundleQty] = useState(1);
+  const [activeImage, setActiveImage] = useState("");
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     const sampleMatch = sampleProducts.find((p) => p.id === id);
@@ -66,7 +71,17 @@ export default function ProductDetails() {
   }, [id]);
 
   const extra = product ? productDetailsExtras[product.id] : null;
-  const gallery = extra?.gallery?.length ? extra.gallery : product ? [product.image_url] : [];
+  const gallery = useMemo(() => {
+    if (!product) return [];
+    const baseImage = product.image_url;
+    const merged = [baseImage, ...(extra?.gallery || [])].filter(Boolean);
+    const unique = [];
+    merged.forEach((img) => {
+      if (!unique.includes(img)) unique.push(img);
+    });
+    while (unique.length < 3) unique.push(baseImage);
+    return unique;
+  }, [product, extra]);
   const reviews = extra?.reviews || [
     { name: "Arjun", rating: 5, text: "Looks premium and feels solid." },
     { name: "Sana", rating: 4, text: "Matches the photos perfectly." },
@@ -84,8 +99,33 @@ export default function ProductDetails() {
     .map((pid) => productMap[pid])
     .filter(Boolean);
 
+  const relatedProducts = useMemo(() => {
+    if (!product) return [];
+    const sameCollection = sampleProducts.filter(
+      (item) => item.id !== product.id && item.collection === product.collection
+    );
+    return sameCollection.slice(0, 3);
+  }, [product]);
+
+  useEffect(() => {
+    if (!gallery.length) return;
+    setActiveImage((prev) => (prev && gallery.includes(prev) ? prev : gallery[0]));
+  }, [gallery]);
+
   if (!product) {
-    return <div className="container-page py-8">Loading...</div>;
+    return (
+      <div className="container-page py-10 page-fade">
+        <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-10">
+          <div className="h-[440px] rounded-3xl skeleton" />
+          <div className="rounded-3xl bg-white p-6 shadow-sm space-y-4">
+            <div className="h-5 w-28 skeleton rounded" />
+            <div className="h-9 w-3/4 skeleton rounded" />
+            <div className="h-5 w-full skeleton rounded" />
+            <div className="h-12 w-full skeleton rounded" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const bundleDeals = [
@@ -101,15 +141,26 @@ export default function ProductDetails() {
     for (let i = 0; i < bundleQty; i += 1) {
       addItem(product);
     }
+    setToast(`${bundleQty} item${bundleQty > 1 ? "s" : ""} added to cart.`);
   };
 
   return (
-    <div className="container-page py-10">
+    <div className="container-page py-10 page-fade">
+      <Toast message={toast} onClose={() => setToast("")} />
+      <div className="mb-6 flex items-center gap-2 text-sm text-slate-500">
+        <Link to="/" className="hover:text-slate-900">Home</Link>
+        <span>/</span>
+        <a href={`/#collection-${(product.collection || "").replace(/\s+/g, "-").toLowerCase()}`} className="hover:text-slate-900">
+          {product.collection || "Collection"}
+        </a>
+        <span>/</span>
+        <span className="text-slate-900">{product.name}</span>
+      </div>
       <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-10 items-start">
         <div className="space-y-4">
           <div className="relative overflow-hidden rounded-3xl shadow-lg">
             <img
-              src={gallery[0]}
+              src={activeImage || gallery[0]}
               alt={product.name}
               className="w-full h-[440px] object-cover"
               onError={handleProductImageError}
@@ -120,13 +171,19 @@ export default function ProductDetails() {
           </div>
           <div className="grid grid-cols-3 gap-3">
             {gallery.slice(0, 3).map((img, idx) => (
-              <img
+              <button
                 key={idx}
-                src={img}
-                alt={`${product.name} ${idx + 1}`}
-                className="h-24 w-full object-cover rounded-xl"
-                onError={handleProductImageError}
-              />
+                type="button"
+                className={`rounded-xl overflow-hidden border ${img === (activeImage || gallery[0]) ? "border-slate-900" : "border-transparent"}`}
+                onClick={() => setActiveImage(img)}
+              >
+                <img
+                  src={img}
+                  alt={`${product.name} ${idx + 1}`}
+                  className="h-24 w-full object-cover"
+                  onError={handleProductImageError}
+                />
+              </button>
             ))}
           </div>
 
@@ -256,6 +313,15 @@ export default function ProductDetails() {
       </div>
 
       <section className="mt-12">
+        <h3 className="text-2xl font-semibold">Related Products</h3>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
+          {(relatedProducts.length ? relatedProducts : sampleProducts.filter((item) => item.id !== product.id).slice(0, 3)).map((item) => (
+            <ProductCard key={item.id} product={item} />
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-12">
         <h3 className="text-2xl font-semibold">Customer Reviews</h3>
         <div className="grid md:grid-cols-2 gap-4 mt-4">
           {reviews.map((r, idx) => (
@@ -269,18 +335,18 @@ export default function ProductDetails() {
       </section>
 
       <section className="mt-12">
-        <h3 className="text-2xl font-semibold">Frequently Bought Together</h3>
+        <h3 className="text-2xl font-semibold">More Photos</h3>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
-          {(frequently.length > 0 ? frequently : sampleProducts.slice(0, 3)).map((p) => (
-            <div key={p.id} className="bg-white p-4 rounded-2xl card-hover">
+          {(gallery.length ? gallery : [product.image_url]).map((img, idx) => (
+            <div key={`${img}-${idx}`} className="bg-white p-4 rounded-2xl card-hover">
               <img
-                src={p.image_url}
-                alt={p.name}
+                src={img}
+                alt={`${product.name} ${idx + 1}`}
                 className="h-40 w-full object-cover rounded-xl"
                 onError={handleProductImageError}
               />
-              <p className="font-semibold mt-2">{p.name}</p>
-              <p className="text-sm text-slate-600">{formatINR(p.price)}</p>
+              <p className="font-semibold mt-2">{product.name}</p>
+              <p className="text-sm text-slate-600">{formatINR(product.price)}</p>
             </div>
           ))}
         </div>
